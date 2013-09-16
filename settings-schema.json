@@ -1,0 +1,51 @@
+{
+ "show-player" : {
+    "type" : "checkbox",
+    "default" : true,
+    "description": "Show Player",
+    "tooltip": "show/hide Player (may have to restart player which is support by applet's player)"
+ },
+  "div1" : {
+    "type" : "separator"
+ },
+ "show-launch-player" : {
+    "type" : "checkbox",
+    "default" : true,
+    "description": "Show Launch player",
+    "tooltip": "show/hide Launch Player (automatically hide if applet's player is displayed)"
+ },
+  "show-launch-player-list" : {
+    "type" : "checkbox",
+    "default" : false,
+    "indent": true,
+    "dependency" : "show-launch-player",
+    "description": "Launch player list always shown",
+    "tooltip": ""
+},
+  "div2" : {
+    "type" : "separator"
+ },
+ "show-app" : {
+    "type" : "checkbox",
+    "default" : true,
+    "description": "Show Applications' volume",
+    "tooltip": "show/hide Applications' volume (automatically hide if no program is playing sound)"
+ },
+ "show-app-list" : {
+    "type" : "checkbox",
+    "default" : false,
+    "indent": true,
+    "dependency" : "show-app",
+    "description": "Applications list always shown",
+    "tooltip": ""
+ },
+  "div3" : {
+    "type" : "separator"
+ },
+ "show-output-device" : {
+    "type" : "checkbox",
+    "default" : true,
+    "description": "Show Output device",
+    "tooltip": "show/hide Output device"
+ }
+}
