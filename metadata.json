@@ -1,8 +1,7 @@
 {
-    "description": "Cinnamon sound applet with settings and applications' volume", 
     "uuid": "sound-with-apps-volume@koutch", 
     "name": "Sound with apps volume", 
-    "version": "1.1.1", 
-    "last-edited": "1376850285", 
-    "icon": "stock_volume"
+    "version": "1.2", 
+    "icon": "stock_volume", 
+    "description": "Cinnamon sound applet with settings and applications' volume"
 }
