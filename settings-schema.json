@@ -47,5 +47,10 @@
     "default" : true,
     "description": "Show Output device",
     "tooltip": "show/hide Output device"
+ },
+ "volume-max" : {
+    "type" : "checkbox",
+    "default" : false,
+    "description": "volume : 150%"
  }
 }
