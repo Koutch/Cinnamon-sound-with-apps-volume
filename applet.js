@@ -1089,8 +1089,10 @@ MyApplet.prototype = {
             this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player-list", "show_launch_player_list", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "show-app", "show_app", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-list", "show_app_list", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-mutebutton", "show_app_mutebutton", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "show-output-device", "show_output_device", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "volume-max", "volume_max", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "mute-middle-click", "mute_middle_click", this._applySettings, null);
             ///add settings button in context menu
             this.edit_menu_item = new PopupMenu.PopupImageMenuItem(_('Settings'), "system-run-symbolic");
             this.edit_menu_item.connect('activate', Lang.bind(this, function () {
@@ -1324,17 +1326,18 @@ MyApplet.prototype = {
 
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        this._outputTitle = new TextImageMenuItem(_("Volume"), "audio-volume-high", false, "right", "sound-volume-menu-item", { reactive: true });
+        this._outputTitle = new TextImageMenuItem(_("Volume"), "audio-volume-high", false, "right", "sound-volume-menu-item");
         this._outputSlider = new MyPopupSliderMenuItem(0);
         this._outputSlider.setMaxValue (this.slider_volumeMax);
         this._outputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_output'));
         this._outputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
-        this._outputSlider.connect('mute', Lang.bind(this, this._toggle_out_mute));
+        if (this.mute_middle_click)
+            this._outputSlider.connect('mute', Lang.bind(this, this._toggle_out_mute));
         this.menu.addMenuItem(this._outputTitle);
         this.menu.addMenuItem(this._outputSlider);
 
         ///@koutch create applications submenu
-        this._selectAppItem = new PopupMenu.PopupSubMenuMenuItem(_("  Applications..."), {expand:false });
+        this._selectAppItem = new PopupMenu.PopupSubMenuMenuItem(_("  Applications..."));
         this.menu.addMenuItem(this._selectAppItem);
         this._appSubMenu();
 
@@ -1576,8 +1579,8 @@ MyApplet.prototype = {
                 sink_input_name = sink_input.get_name().substring(0,sink_input_name_length) + '...' ;
             }
             
-            let menuItem = new PopupMenu.PopupBaseMenuItem({reactive: true });
-            menuItem._text = '> ' + sink_input_name + " : ";
+            let menuItem = new PopupMenu.PopupBaseMenuItem({reactive: false});
+            menuItem._text = '- ' + sink_input_name + " : ";
             menuItem._percentage = Math.round( sink_input.volume / this._volumeMax * 100) + "%"
             if (sink_input.is_muted) menuItem._percentage =  _("muted");            
             menuItem._text_percentage = new St.Label({text: menuItem._text + menuItem._percentage});
@@ -1590,9 +1593,44 @@ MyApplet.prototype = {
                 
             menuItem._icon = new St.Icon({ icon_name: menuItem._icon_name, icon_type: St.IconType.FULLCOLOR, style_class: 'popup-menu-icon' });
             menuItem.addActor(menuItem._icon);
+            ///@koutch add mute button
+            if (this.show_app_mutebutton){
+                ///I use "icon_file" because I can't find a better icon than 'audio-volume-muted-blocked-panel' in this way
+                let icon_file = Gio.File.new_for_path('/usr/share/icons/gnome/scalable/status/audio-volume-muted-symbolic.svg');
+                if (icon_file.query_exists(null)) {/// icon is found           
+                    let gicon = new Gio.FileIcon({ file: Gio.file_new_for_path('/usr/share/icons/gnome/scalable/status/audio-volume-muted-symbolic.svg') });
+                    menuItem._muteIcon = new St.Icon({ gicon: gicon, style_class: 'popup-menu-icon' });
+                }
+                else {
+                    menuItem._muteIcon = new St.Icon({icon_name:'audio-volume-muted-blocked-panel', icon_type: St.IconType.FULLCOLOR, icon_size: 16});
+                }
+                menuItem._muteButton = new St.Button({ child: menuItem._muteIcon});
+                menuItem._muteButton.connect('clicked', Lang.bind(this, function(){             
+                   if (!sink_input.is_muted){
+                        sink_input.change_is_muted(true);
+                        menuItem._percentage =  _("muted");          
+                    }
+                    if (sink_input.is_muted){
+                        sink_input.change_is_muted(false);
+                        menuItem._percentage = Math.round( sink_input.volume / this._volumeMax * 100) + "%"
+                     }
+                    ///@koutch update menuItem percentage           
+                    menuItem.removeActor(menuItem._text_percentage);
+                    menuItem.removeActor(menuItem._icon);
+                    if (this.show_app_mutebutton)
+                        menuItem.removeActor(menuItem._muteButton);
+                    menuItem._text_percentage = new St.Label({text: menuItem._text + menuItem._percentage});
+                    menuItem.addActor(menuItem._text_percentage);
+                    menuItem.addActor(menuItem._icon);
+                    if (this.show_app_mutebutton)
+                        menuItem.addActor(menuItem._muteButton);
+                }));
+                menuItem.addActor(menuItem._muteButton);
+            }
 
             let sink_inputSlider = new MyPopupSliderMenuItem(sink_input.volume / this._volumeMax);
             sink_inputSlider.setMaxValue (this.slider_volumeMax);
+            sink_inputSlider.setValue (sink_input.volume / this._volumeMax);
             sink_inputSlider.connect('value-changed', Lang.bind(this, function(slider, value ) {            
                 let volume = value * this._volumeMax;
                 let prev_muted = sink_input.is_muted;
@@ -1601,11 +1639,13 @@ MyApplet.prototype = {
                     sink_input.volume = 0;
                     if (!prev_muted)
                         sink_input.change_is_muted(true);
+                    menuItem._percentage =  _("muted");          
                 }
                 else {
                     sink_input.volume = volume;
                     if (prev_muted)
                         sink_input.change_is_muted(false);
+                    menuItem._percentage = Math.round( sink_input.volume / this._volumeMax * 100) + "%"
                 }
 
                 sink_input.push_volume();
@@ -1613,30 +1653,37 @@ MyApplet.prototype = {
                 ///@koutch update menuItem percentage           
                 menuItem.removeActor(menuItem._text_percentage);
                 menuItem.removeActor(menuItem._icon);
-                menuItem._percentage = Math.round( sink_input.volume / this._volumeMax * 100) + "%"
-                if (sink_input.is_muted) menuItem._percentage =  _("muted");            
+                if (this.show_app_mutebutton)
+                    menuItem.removeActor(menuItem._muteButton);
                 menuItem._text_percentage = new St.Label({text: menuItem._text + menuItem._percentage});
                 menuItem.addActor(menuItem._text_percentage);
                 menuItem.addActor(menuItem._icon);
+                if (this.show_app_mutebutton)
+                    menuItem.addActor(menuItem._muteButton);
             }));
 
-            sink_inputSlider.connect('mute', Lang.bind(this, function(slider) { 
-               if (!sink_input.is_muted){
-                    sink_input.change_is_muted(true);
-                    menuItem._percentage =  _("muted");          
-                }
-                if (sink_input.is_muted){
-                    sink_input.change_is_muted(false);
-                    menuItem._percentage = Math.round( sink_input.volume / this._volumeMax * 100) + "%"
-                 }
-                ///@koutch update menuItem percentage           
-                menuItem.removeActor(menuItem._text_percentage);
-                menuItem.removeActor(menuItem._icon);
-                menuItem._text_percentage = new St.Label({text: menuItem._text + menuItem._percentage});
-                menuItem.addActor(menuItem._text_percentage);
-                menuItem.addActor(menuItem._icon);
-            }));
-        
+            if (this.mute_middle_click){
+                sink_inputSlider.connect('mute', Lang.bind(this, function(slider) { 
+                   if (!sink_input.is_muted){
+                        sink_input.change_is_muted(true);
+                        menuItem._percentage =  _("muted");          
+                    }
+                    if (sink_input.is_muted){
+                        sink_input.change_is_muted(false);
+                        menuItem._percentage = Math.round( sink_input.volume / this._volumeMax * 100) + "%"
+                     }
+                    ///@koutch update menuItem percentage           
+                    menuItem.removeActor(menuItem._text_percentage);
+                    menuItem.removeActor(menuItem._icon);
+                    if (this.show_app_mutebutton)
+                        menuItem.removeActor(menuItem._muteButton);
+                    menuItem._text_percentage = new St.Label({text: menuItem._text + menuItem._percentage});
+                    menuItem.addActor(menuItem._text_percentage);
+                    menuItem.addActor(menuItem._icon);
+                    if (this.show_app_mutebutton)
+                        menuItem.addActor(menuItem._muteButton);
+                }));
+            }
             this._selectAppItem.menu.addMenuItem(menuItem);
             this._selectAppItem.menu.addMenuItem(sink_inputSlider);
         }
