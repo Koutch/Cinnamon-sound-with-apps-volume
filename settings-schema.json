@@ -39,6 +39,14 @@
     "description": "Applications list always shown",
     "tooltip": ""
  },
+ "show-app-mutebutton" : {
+    "type" : "checkbox",
+    "default" : true,
+    "indent": true,
+    "dependency" : "show-app",
+    "description": "Mute button",
+    "tooltip": "enable/disable mute button"
+ },
   "div3" : {
     "type" : "separator"
  },
@@ -51,6 +59,11 @@
  "volume-max" : {
     "type" : "checkbox",
     "default" : false,
-    "description": "volume : 150%"
+    "description": "Volume : 150%"
+ },
+ "mute-middle-click" : {
+    "type" : "checkbox",
+    "default" : true,
+    "description": "Mute with middle click on slider"
  }
 }
