@@ -12,11 +12,183 @@ const Gvc = imports.gi.Gvc;
 const Pango = imports.gi.Pango;
 const Tooltips = imports.ui.tooltips;
 
-///@koutch Settings
-const Settings = imports.ui.settings; // Needed for settings API
+///@koutch Settings 
+const Settings = imports.ui.settings;  // Needed for settings API
 const Gtk = imports.gi.Gtk;
 const Util = imports.misc.util;
-///@koutch Settings
+///@koutch Settings 
+
+function MyPopupSliderMenuItem() {
+    this._init.apply(this, arguments);
+}
+MyPopupSliderMenuItem.prototype = Object.create(PopupMenu.PopupSliderMenuItem.prototype);
+
+
+
+MyPopupSliderMenuItem.prototype.setMaxValue = function(value) {
+	this.maxValue = value;
+};
+
+
+//NR
+MyPopupSliderMenuItem.prototype._init = function(value) {
+	this.maxValue = 1;
+	
+    PopupMenu.PopupBaseMenuItem.prototype._init.call(this, { activate: false });
+
+    this.actor.connect('key-press-event', Lang.bind(this, this._onKeyPressEvent));
+
+    if (isNaN(value))
+        // Avoid spreading NaNs around
+        throw TypeError('The slider value must be a number');
+    this._value = Math.max(Math.min(value, this.maxValue), 0);
+
+    this._slider = new St.DrawingArea({ style_class: 'popup-slider-menu-item', reactive: true });
+    this.addActor(this._slider, { span: -1, expand: true });
+    this._slider.connect('repaint', Lang.bind(this, this._sliderRepaint));
+    this.actor.connect('button-press-event', Lang.bind(this, this._startDragging));
+    this.actor.connect('scroll-event', Lang.bind(this, this._onScrollEvent));
+
+    this._releaseId = this._motionId = 0;
+    this._dragging = false;
+};
+
+//NR
+MyPopupSliderMenuItem.prototype.setValue = function(value) {
+	
+    if (isNaN(value))
+        throw TypeError('The slider value must be a number');
+
+    this._value = Math.max(Math.min(value, this.maxValue), 0);
+    this._slider.queue_repaint();
+};
+
+// NR
+MyPopupSliderMenuItem.prototype._sliderRepaint = function(area) {
+    let cr = area.get_context();
+    let themeNode = area.get_theme_node();
+    let [width, height] = area.get_surface_size();
+
+    let handleRadius = themeNode.get_length('-slider-handle-radius');
+
+    let sliderWidth = width - 2 * handleRadius;
+    let sliderHeight = themeNode.get_length('-slider-height');
+
+    let sliderBorderWidth = themeNode.get_length('-slider-border-width');
+
+    let sliderBorderColor = themeNode.get_color('-slider-border-color');
+    let sliderColor = themeNode.get_color('-slider-background-color');
+
+    let sliderActiveBorderColor = themeNode.get_color('-slider-active-border-color');
+    let sliderActiveColor = themeNode.get_color('-slider-active-background-color');
+
+    cr.setSourceRGBA (
+        sliderActiveColor.red / 255,
+        sliderActiveColor.green / 255,
+        sliderActiveColor.blue / 255,
+        sliderActiveColor.alpha / 255);
+    cr.rectangle(handleRadius, (height - sliderHeight) / 2, sliderWidth * this._value / this.maxValue, sliderHeight);
+    cr.fillPreserve();
+    cr.setSourceRGBA (
+        sliderActiveBorderColor.red / 255,
+        sliderActiveBorderColor.green / 255,
+        sliderActiveBorderColor.blue / 255,
+        sliderActiveBorderColor.alpha / 255);
+    cr.setLineWidth(sliderBorderWidth);
+    cr.stroke();
+
+    cr.setSourceRGBA (
+        sliderColor.red / 255,
+        sliderColor.green / 255,
+        sliderColor.blue / 255,
+        sliderColor.alpha / 255);
+    cr.rectangle(handleRadius + sliderWidth * this._value / this.maxValue, (height - sliderHeight) / 2, sliderWidth * (1 - this._value / this.maxValue), sliderHeight);
+    cr.fillPreserve();
+    cr.setSourceRGBA (
+        sliderBorderColor.red / 255,
+        sliderBorderColor.green / 255,
+        sliderBorderColor.blue / 255,
+        sliderBorderColor.alpha / 255);
+    cr.setLineWidth(sliderBorderWidth);
+    cr.stroke();
+
+    let handleY = height / 2;
+    let handleX = handleRadius + (width - 2 * handleRadius) * this._value / this.maxValue;
+
+    let color = themeNode.get_foreground_color();
+    cr.setSourceRGBA (
+        color.red / 255,
+        color.green / 255,
+        color.blue / 255,
+        color.alpha / 255);
+    cr.arc(handleX, handleY, handleRadius, 0, 2 * Math.PI);
+    cr.fill();
+};
+
+//NR
+MyPopupSliderMenuItem.prototype._onScrollEvent = function (actor, event) {
+    let direction = event.get_scroll_direction();
+
+    if (direction == Clutter.ScrollDirection.DOWN) {
+        this._value = Math.max(this.maxValue, this._value - SLIDER_SCROLL_STEP);
+    }
+    else if (direction == Clutter.ScrollDirection.UP) {
+        this._value = Math.min(this.maxValue, this._value + SLIDER_SCROLL_STEP);
+    }
+	
+    this._slider.queue_repaint();
+    this.emit('value-changed', this._value);
+};
+
+// NR
+MyPopupSliderMenuItem.prototype._moveHandle = function(absX, absY) {
+    let relX, relY, sliderX, sliderY;
+    [sliderX, sliderY] = this._slider.get_transformed_position();
+    relX = absX - sliderX;
+    relY = absY - sliderY;
+
+    let width = this._slider.width;
+    let handleRadius = this._slider.get_theme_node().get_length('-slider-handle-radius');
+
+    let newvalue;
+    if (relX < handleRadius)
+        newvalue = 0;
+    else if (relX > width - handleRadius)
+        newvalue = this.maxValue;
+    else
+        newvalue = (relX - handleRadius) / (width - 2 * handleRadius) * this.maxValue;
+    
+    if (this.oldValue < newvalue) {
+		if (newvalue > 1  && newvalue < 1.17) {
+			newvalue = 1;
+		} else {
+    		this.oldValue = newvalue;
+		}
+    } else {
+    	this.oldValue = newvalue;
+    }
+    
+    
+    this._value = newvalue;
+    this._slider.queue_repaint();
+    this.emit('value-changed', this._value);
+};
+
+// NR
+MyPopupSliderMenuItem.prototype._onKeyPressEvent = function (actor, event) {
+    let key = event.get_key_symbol();
+    if (key == Clutter.KEY_Right || key == Clutter.KEY_Left) {
+        let delta = key == Clutter.KEY_Right ? 0.1 : -0.1;
+        this._value = Math.max(0, Math.min(this._value + delta, this.maxValue));
+        this._slider.queue_repaint();
+        this.emit('value-changed', this._value);
+        this.emit('drag-end');
+        return true;
+    }
+    return false;
+};
+
+
 
 const PropIFace = {
     name: 'org.freedesktop.DBus.Properties',
@@ -289,7 +461,7 @@ ControlButton.prototype = {
             style_class: 'sound-button-icon',
         });
         this.button.set_child(this.icon);
-        this.actor.add_actor(this.button);
+        this.actor.add_actor(this.button);        
     },
     getActor: function() {
         return this.actor;
@@ -485,7 +657,7 @@ Player.prototype = {
                     this._setStatus(iface, value["playbackStatus"]);
                 if (value["metadata"])
                     this._setMetadata(sender, value["metadata"]);
-            }
+            } 
         }));
 
         this._mediaServerPlayer.connect('Seeked', Lang.bind(this, function(sender, value) {
@@ -528,9 +700,9 @@ Player.prototype = {
             // Clem: The following code was commented out. When the next song started, it resulted in hiding the sound menu, making it hard for the user to repeatedly click on the next song button.
             // There's probably a better fix and this was not tested with players which don't support seeking, but it fixes the regression created by the slider (apparently when the slider is hidden it closes the menu)
             // if (this._playerStatus == "Playing" && this._canSeek && this.showPosition)
-            // this._positionSlider.actor.show();
+            //     this._positionSlider.actor.show();
             // else
-            // this._positionSlider.actor.hide();
+            //     this._positionSlider.actor.hide();
         }));
     },
 
@@ -721,16 +893,16 @@ Player.prototype = {
 
     _hideCover: function() {
         /*Tweener.addTween(this.trackCoverContainer, { opacity: 0,
-time: 0.3,
-transition: 'easeOutCubic',
-});*/
+            time: 0.3,
+            transition: 'easeOutCubic',
+        });*/
     },
 
     _showCover: function(cover_path) {
         /*Tweener.addTween(this._trackCover, { opacity: 0,
-time: 0.3,
-transition: 'easeOutCubic',
-onComplete: Lang.bind(this, function() {*/
+            time: 0.3,
+            transition: 'easeOutCubic',
+            onComplete: Lang.bind(this, function() {*/
                 if (! cover_path || ! GLib.file_test(cover_path, GLib.FileTest.EXISTS)) {
                     this._trackCover.set_child(new St.Icon({icon_name: "media-optical-cd-audio", icon_size: 210, icon_type: St.IconType.FULLCOLOR}));
                 }
@@ -744,11 +916,11 @@ onComplete: Lang.bind(this, function() {*/
                     this._trackCover.set_child(b);
                 }
                 /*Tweener.addTween(this._trackCover, { opacity: 255,
-time: 0.3,
-transition: 'easeInCubic'
-});
-})
-});*/
+                    time: 0.3,
+                    transition: 'easeInCubic'
+                });
+            })
+        });*/
     },
 
     setIcon: function(icon) {
@@ -779,7 +951,7 @@ MediaPlayerLauncher.prototype = {
     },
 
     activate: function (event) {
-            this._menu.actor.hide();
+    	this._menu.actor.hide();
         this._app.activate_full(-1, event.get_time());
         return true;
     }
@@ -795,7 +967,7 @@ MyApplet.prototype = {
 ///@koutch
     _init: function(orientation, panel_height, instance_id) {
         Applet.IconApplet.prototype._init.call(this, orientation, panel_height, instance_id);
-                        ///@koutch Settings instance_id needed for settings API
+			///@koutch Settings instance_id needed for settings API
 
         try {
             this.menuManager = new PopupMenu.PopupMenuManager(this);
@@ -843,21 +1015,21 @@ MyApplet.prototype = {
 
             this._control.open();
 
-                         ///@koutch Settings
-                        this.settings = new Settings.AppletSettings(this, "sound-with-apps-volume@koutch", instance_id);
-                        this.settings.bindProperty(Settings.BindingDirection.IN, "show-player", "show_player", this._applySettings, null);
-                        this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player", "show_launch_player", this._applySettings, null);
-                        this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player-list", "show_launch_player_list", this._applySettings, null);
-                        this.settings.bindProperty(Settings.BindingDirection.IN, "show-app", "show_app", this._applySettings, null);
-                        this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-list", "show_app_list", this._applySettings, null);
-                        this.settings.bindProperty(Settings.BindingDirection.IN, "show-output-device", "show_output_device", this._applySettings, null);
-                        ///add settings button in context menu
-                        this.edit_menu_item = new PopupMenu.PopupImageMenuItem(_('Settings'), "system-run-symbolic");
-                        this.edit_menu_item.connect('activate', Lang.bind(this, function () {
-                                Util.spawnCommandLine('cinnamon-settings applets sound-with-apps-volume@koutch');
-                        }));
-                        this.edit_menu_item.addActor(new St.Button({ label: " " }));/// to align icon with switch button
-                        this._applet_context_menu.addMenuItem(this.edit_menu_item);
+ 			///@koutch Settings 
+			this.settings = new Settings.AppletSettings(this, "sound-with-apps-volume@koutch", instance_id);
+			this.settings.bindProperty(Settings.BindingDirection.IN, "show-player", "show_player", this._applySettings, null);                            
+			this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player", "show_launch_player", this._applySettings, null);
+			this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player-list", "show_launch_player_list", this._applySettings, null);
+			this.settings.bindProperty(Settings.BindingDirection.IN, "show-app", "show_app", this._applySettings, null);
+			this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-list", "show_app_list", this._applySettings, null);
+			this.settings.bindProperty(Settings.BindingDirection.IN, "show-output-device", "show_output_device", this._applySettings, null);
+			///add settings button in context menu
+			this.edit_menu_item = new PopupMenu.PopupImageMenuItem(_('Settings'), "system-run-symbolic");
+			this.edit_menu_item.connect('activate', Lang.bind(this, function () {
+				Util.spawnCommandLine('cinnamon-settings applets sound-with-apps-volume@koutch');
+			}));
+			this.edit_menu_item.addActor(new St.Button({ label: "   " }));/// to align icon with switch button
+			this._applet_context_menu.addMenuItem(this.edit_menu_item);
 
             this._volumeControlShown = false;
             this._showFixedElements();
@@ -869,26 +1041,26 @@ MyApplet.prototype = {
     },
 ///@koucth
     on_applet_removed_from_panel : function() {
-                
-                ///@koucth Settings
-        this.settings.finalize(); // This is called when a user removes the applet from the panel..
+		
+		///@koucth Settings
+        this.settings.finalize();    // This is called when a user removes the applet from the panel.. 
 
-        if (this._iconTimeoutId)
-            Mainloop.source_remove(this._iconTimeoutId);
+        if (this._iconTimeoutId) 
+            Mainloop.source_remove(this._iconTimeoutId); 
     },
 ///@koucth
     on_applet_clicked: function(event) {
-                if (!this.menu.isOpen){
-                        ///@koutch update application list
-                        this._appSubMenu();
+		if (!this.menu.isOpen){
+			///@koutch update application list
+			this._appSubMenu();
 
-                        ///@koucth Settings
-                        if (this.show_launch_player_list && this.show_launch_player)
-                                this._launchPlayerItem.activate();
-                                
-                        if (this.show_app_list && this.show_app)
-                                this._selectAppItem.activate();
-                }
+			///@koucth Settings 
+			if (this.show_launch_player_list && this.show_launch_player)
+				this._launchPlayerItem.activate();
+				
+			if (this.show_app_list && this.show_app)
+				this._selectAppItem.activate();
+		}
         this.menu.toggle();
     },
 
@@ -954,7 +1126,7 @@ MyApplet.prototype = {
     setIconName: function(icon) {
         this._icon_name = icon;
         this.set_applet_icon_symbolic_name(icon);
-                ///@koutch Settings test show_player settings to display volume icone if player is disable
+		///@koutch Settings test show_player settings to display volume icone if player is disable
         if (this._nbPlayers()>0 && this.show_player) {
             if (this._iconTimeoutId) {
                 Mainloop.source_remove(this._iconTimeoutId);
@@ -987,9 +1159,9 @@ MyApplet.prototype = {
         ///@koutch Settings refresh the menu : if player is launch when the menu is open
         /// the menu stay open but don't display as it should
         if (this.menu.isOpen && this.show_player){
-                        this.menu.toggle();
-                        this.on_applet_clicked(null);
-                }
+			this.menu.toggle();
+			this.on_applet_clicked(null);
+		}
 
     },
 ///@koutch
@@ -1011,9 +1183,9 @@ MyApplet.prototype = {
         ///@koutch Settings refresh the menu : if player is closed by the "Quit Player" button in applet player
         /// the menu stay open but don't display as it should
         if (this.menu.isOpen && this.show_player){
-                        this.menu.toggle();
-                        this.on_applet_clicked(null);
-                }
+			this.menu.toggle();
+			this.on_applet_clicked(null);
+		}
 
     },
 
@@ -1028,29 +1200,29 @@ MyApplet.prototype = {
     _showFixedElements: function() {
         if (this._volumeControlShown) return;
         this._volumeControlShown = true;
-                
-                ///@koutch Settings test show_player settings to add 'Launch player'
-                ///if there is players but settings don't show it
-                ///show_launch_player is tested at the end of this function
+		
+		///@koutch Settings test show_player settings to add 'Launch player' 
+		///if there is players but settings don't show it 
+		///show_launch_player is tested at the end of this function
         if (this._nbPlayers()==0 || !this.show_player ){
-                        if (this._nbPlayers()>0)
-                                this.menu.removeAll();/// ensure menu is empty
-                                
-                this._availablePlayers = new Array();
+			if (this._nbPlayers()>0) 
+				this.menu.removeAll();/// ensure menu is empty
+				
+        	this._availablePlayers = new Array();
             let appsys = Cinnamon.AppSystem.get_default();
             let allApps = appsys.get_all();
             let listedDesktopFiles = new Array();
             for (let y=0; y<allApps.length; y++) {
-                    let app = allApps[y];
-                    let entry = app.get_tree_entry();
-                    let path = entry.get_desktop_file_path();
-                    for (var p=0; p<compatible_players.length; p++) {
+            	let app = allApps[y];
+            	let entry = app.get_tree_entry();
+            	let path = entry.get_desktop_file_path();
+            	for (var p=0; p<compatible_players.length; p++) {
                     let desktopFile = compatible_players[p]+".desktop";
-                            if (path.indexOf(desktopFile) != -1 && listedDesktopFiles.indexOf(desktopFile) == -1) {
-                                this._availablePlayers.push(app);
+            		if (path.indexOf(desktopFile) != -1 && listedDesktopFiles.indexOf(desktopFile) == -1) {
+                		this._availablePlayers.push(app);
                         listedDesktopFiles.push(desktopFile);
-                            }
-                           }
+            		}
+           		}
             }
             
 
@@ -1071,20 +1243,22 @@ MyApplet.prototype = {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._outputTitle = new TextImageMenuItem(_("Volume"), "audio-volume-high", false, "right", "sound-volume-menu-item");
-        this._outputSlider = new PopupMenu.PopupSliderMenuItem(0);
+        this._outputSlider = new MyPopupSliderMenuItem(0);
+        this._outputSlider.setMaxValue (1.5);
         this._outputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_output'));
         this._outputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
         this.menu.addMenuItem(this._outputTitle);
         this.menu.addMenuItem(this._outputSlider);
 
-                ///@koutch create applications submenu
-                this._selectAppItem = new PopupMenu.PopupSubMenuMenuItem(_(" Applications..."), {expend:false });
-                this.menu.addMenuItem(this._selectAppItem);
-                this._appSubMenu();
+		///@koutch create applications submenu
+		this._selectAppItem = new PopupMenu.PopupSubMenuMenuItem(_("  Applications..."), {expend:false });
+		this.menu.addMenuItem(this._selectAppItem);
+		this._appSubMenu();
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._inputTitle = new PopupMenu.PopupMenuItem(_("Microphone"), { reactive: false });
-        this._inputSlider = new PopupMenu.PopupSliderMenuItem(0);
+        this._inputSlider = new MyPopupSliderMenuItem(0);
+        this._inputSlider.setMaxValue (1.5);
         this._inputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_input'));
         this._inputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
         this.menu.addMenuItem(this._inputTitle);
@@ -1106,21 +1280,21 @@ MyApplet.prototype = {
         this._volumeChanged (null, null, '_output');
         this._volumeChanged (null, null, '_input');
 
-                ///@koutch Settings
-                if (this.show_launch_player)
-                        this._launchPlayerItem.actor.show();
-                else        
-                        this._launchPlayerItem.actor.hide();
-                        
-                if (this.show_app)
-                        this._selectAppItem.actor.show();                        
-                else
-                        this._selectAppItem.actor.hide();
-                        
-                if (this.show_output_device)
-                        this._selectDeviceItem.actor.show();
-                else
-                        this._selectDeviceItem.actor.hide();
+		///@koutch Settings 
+		if (this.show_launch_player)
+			this._launchPlayerItem.actor.show();
+		else	
+			this._launchPlayerItem.actor.hide();
+			
+		if (this.show_app)
+			this._selectAppItem.actor.show();			
+		else
+			this._selectAppItem.actor.hide();
+			
+		if (this.show_output_device)
+			this._selectDeviceItem.actor.show();
+		else
+			this._selectDeviceItem.actor.hide();
     },
 
     _sliderChanged: function(slider, value, property) {
@@ -1162,9 +1336,9 @@ MyApplet.prototype = {
                 this.setIconName(this._volumeToIcon(this._output.volume));
                 this._outputTitle.setIcon(this._volumeToIcon(this._output.volume));
                 ///@koutch replace floor by round to fix percentage bug (it wasn't always 5%)
-// this.set_applet_tooltip(_("Volume") + ": " + Math.floor(this._output.volume / this._volumeMax * 100) + "%");
+//                this.set_applet_tooltip(_("Volume") + ": " + Math.floor(this._output.volume / this._volumeMax * 100) + "%");
                 this.set_applet_tooltip(_("Volume") + ": " + Math.round(this._output.volume / this._volumeMax * 100) + "%");
-// this._outputTitle.setText(_("Volume") + ": " + Math.floor(this._output.volume / this._volumeMax * 100) + "%");
+//                this._outputTitle.setText(_("Volume") + ": " + Math.floor(this._output.volume / this._volumeMax * 100) + "%");
                 this._outputTitle.setText(_("Volume") + ": " + Math.round(this._output.volume / this._volumeMax * 100) + "%");
                 this.mute_out_switch.setToggleState(false);
             }
@@ -1185,9 +1359,9 @@ MyApplet.prototype = {
             this._outputTitle.setIcon(this._volumeToIcon(this._output.volume));
             this.setIconName(this._volumeToIcon(this._output.volume));
             ///@koutch replace floor by round to fix percentage bug (it wasn't always 5%)
-// this.set_applet_tooltip(_("Volume") + ": " + Math.floor(this._output.volume / this._volumeMax * 100) + "%");
+//            this.set_applet_tooltip(_("Volume") + ": " + Math.floor(this._output.volume / this._volumeMax * 100) + "%");
             this.set_applet_tooltip(_("Volume") + ": " + Math.round(this._output.volume / this._volumeMax * 100) + "%");
-// this._outputTitle.setText(_("Volume") + ": " + Math.floor(this._output.volume / this._volumeMax * 100) + "%");
+//            this._outputTitle.setText(_("Volume") + ": " + Math.floor(this._output.volume / this._volumeMax * 100) + "%");
             this._outputTitle.setText(_("Volume") + ": " + Math.round(this._output.volume / this._volumeMax * 100) + "%");
         }
     },
@@ -1229,19 +1403,19 @@ MyApplet.prototype = {
             this._mutedChanged (null, null, '_output');
             this._volumeChanged (null, null, '_output');
             let sinks = this._control.get_sinks();
-         this._selectDeviceItem.menu.removeAll();
-         for (let i = 0; i < sinks.length; i++) {
-                 let sink = sinks[i];
-                 let menuItem = new PopupMenu.PopupMenuItem(sink.get_description());
-                 if (sinks[i].get_id() == this._output.get_id()) {
-                         menuItem.setShowDot(true);
-                 }
-                 menuItem.connect('activate', Lang.bind(this, function() {
-                         log('Changing default sink to ' + sink.get_description());
-         this._control.set_default_sink(sink);
-         }));
-         this._selectDeviceItem.menu.addMenuItem(menuItem);
-         }
+	        this._selectDeviceItem.menu.removeAll();
+	        for (let i = 0; i < sinks.length; i++) {
+	        	let sink = sinks[i];
+	        	let menuItem = new PopupMenu.PopupMenuItem(sink.get_description());
+	        	if (sinks[i].get_id() == this._output.get_id()) {
+	        		menuItem.setShowDot(true);
+	        	}
+	        	menuItem.connect('activate', Lang.bind(this, function() {
+	        		log('Changing default sink to ' + sink.get_description());
+	                this._control.set_default_sink(sink);
+	            }));
+	            this._selectDeviceItem.menu.addMenuItem(menuItem);
+	        }
         } else {
             this._outputSlider.setValue(0);
             this.setIconName('audio-volume-muted-symbolic');
@@ -1291,94 +1465,95 @@ MyApplet.prototype = {
             this._inputSlider.actor.hide();
         }
     },
-///@koutch create application list        
-    _appSubMenu: function() {                                
-                let sink_input_name_length = 20;
-                let sink_input_name = "";
-                let sink_inputs = this._control.get_sink_inputs();
-        
-         this._selectAppItem.menu.removeAll();
+///@koutch create application list	
+    _appSubMenu: function() {				
+		let sink_input_name_length = 20;
+		let sink_input_name = "";
+		let sink_inputs = this._control.get_sink_inputs();
+	    
+	    this._selectAppItem.menu.removeAll();
         this._selectAppItem.actor.hide(); /// hide application list if no application is playing sound
         
-                if (!this.show_app)
-                        return;
-        
-         for (let i = 0; i < sink_inputs.length; i++) {
-                        this._selectAppItem.actor.show();
+		if (!this.show_app)
+			return;
+	    
+	    for (let i = 0; i < sink_inputs.length; i++) {
+			this._selectAppItem.actor.show();
 
-                 let sink_input = sink_inputs[i];
+	       	let sink_input = sink_inputs[i];
 
-                        if( sink_input.get_name().length < sink_input_name_length )         {
-                                sink_input_name = sink_input.get_name();
-                        }
-                        else {
-                                sink_input_name = sink_input.get_name().substring(0,sink_input_name_length) + '...' ;
-                        }
-                        
-                        let menuItem = new PopupMenu.PopupBaseMenuItem({ reactive: false });
-                        menuItem._text = '> ' + sink_input_name + " : ";
-                        menuItem._text_percentage = new St.Label({text: menuItem._text + Math.round( sink_input.volume / this._volumeMax * 100) + "%"});
-                        menuItem.addActor(menuItem._text_percentage);
-                        ///@ koutch prevent python icon (e.g. exaile or decibel audio player)
-                        if (sink_input.get_icon_name()=='/usr/share/pixmaps/python2.7.xpm')
-                                menuItem._icon_name = sink_input.get_name().substring(0, sink_input.get_name().length - 3 );///to remove '.py'
-                        else
-                                menuItem._icon_name = sink_input.get_icon_name();                
-                                
-                        menuItem._icon = new St.Icon({ icon_name: menuItem._icon_name, icon_type: St.IconType.FULLCOLOR, style_class: 'popup-menu-icon' });
-                        menuItem.addActor(menuItem._icon);
+			if( sink_input.get_name().length < sink_input_name_length ) 	{
+				sink_input_name = sink_input.get_name();
+			} 
+			else {
+				sink_input_name = sink_input.get_name().substring(0,sink_input_name_length) + '...' ;
+			}
+			
+			let menuItem = new PopupMenu.PopupBaseMenuItem({ reactive: false });
+			menuItem._text = '> ' + sink_input_name + " : ";
+			menuItem._text_percentage = new St.Label({text: menuItem._text + Math.round( sink_input.volume / this._volumeMax * 100) + "%"});
+			menuItem.addActor(menuItem._text_percentage);
+			///@ koutch prevent python icon (e.g. exaile or decibel audio player)
+			if (sink_input.get_icon_name()=='/usr/share/pixmaps/python2.7.xpm')
+				menuItem._icon_name = sink_input.get_name().substring(0, sink_input.get_name().length - 3 );///to remove '.py'
+			else 
+				menuItem._icon_name = sink_input.get_icon_name();		
+				
+			menuItem._icon = new St.Icon({ icon_name: menuItem._icon_name, icon_type: St.IconType.FULLCOLOR, style_class: 'popup-menu-icon' });
+			menuItem.addActor(menuItem._icon);
 
-            let sink_inputSlider = new PopupMenu.PopupSliderMenuItem(sink_input.volume / this._volumeMax);
-                        sink_inputSlider.connect('value-changed', Lang.bind(this, function(slider, value ) {                        
-                 let volume = value * this._volumeMax;
-                                let prev_muted = sink_input.is_muted;
+            let sink_inputSlider = new MyPopupSliderMenuItem(sink_input.volume / this._volumeMax);
+            sink_inputSlider.setMaxValue (1.5);
+			sink_inputSlider.connect('value-changed', Lang.bind(this, function(slider, value ) {			
+		        let volume = value * this._volumeMax;
+				let prev_muted = sink_input.is_muted;
 
-                                if (volume < 1) {
-                                        sink_input.volume = 0;
-                                        if (!prev_muted)
-                                                sink_input.change_is_muted(true);
-                                }
-                                else {
-                                        sink_input.volume = volume;
-                                        if (prev_muted)
-                                                sink_input.change_is_muted(false);
-                                }
+				if (volume < 1) {
+					sink_input.volume = 0;
+					if (!prev_muted)
+						sink_input.change_is_muted(true);
+				}
+				else {
+					sink_input.volume = volume;
+					if (prev_muted)
+						sink_input.change_is_muted(false);
+				}
 
-                                sink_input.push_volume();
-                                
-                                ///@koutch update menuItem percentage                        
-                                menuItem.removeActor(menuItem._text_percentage);
-                                menuItem.removeActor(menuItem._icon);
-                                menuItem._text_percentage = new St.Label({text: menuItem._text + Math.round( sink_input.volume / this._volumeMax * 100) + "%"});
-                                menuItem.addActor(menuItem._text_percentage);
-                                menuItem.addActor(menuItem._icon);
-                        }));
-                        
+				sink_input.push_volume();
+				
+				///@koutch update menuItem percentage			
+				menuItem.removeActor(menuItem._text_percentage);
+				menuItem.removeActor(menuItem._icon);
+				menuItem._text_percentage = new St.Label({text: menuItem._text + Math.round( sink_input.volume / this._volumeMax * 100) + "%"});
+				menuItem.addActor(menuItem._text_percentage);
+				menuItem.addActor(menuItem._icon);
+			}));
+			
             this._selectAppItem.menu.addMenuItem(menuItem);
             this._selectAppItem.menu.addMenuItem(sink_inputSlider);
         }
     },
-///@koutch Settings                 
+///@koutch Settings 		
     _applySettings: function() {
-                
+		
         this._cleanup();
         this._volumeControlShown = false;
         /// add players if any
-                if ( this.show_player && this._nbPlayers()>0 ){
-                        for (owner in this._players) {
-                                this._addPlayer(owner);
-                        }
-                }
+		if ( this.show_player && this._nbPlayers()>0 ){
+			for (owner in this._players) {
+				this._addPlayer(owner);
+			}
+		}
 
         this._showFixedElements();
         this._readOutput();
         this.setIconName(this._icon_name);
         /// refresh the menu if it has been open while applying settings
         if (this.menu.isOpen){
-                        this.menu.toggle();
-                        this.on_applet_clicked(null);
-                }
-        }
+			this.menu.toggle();
+			this.on_applet_clicked(null);
+		}
+	}
 
 };
 
