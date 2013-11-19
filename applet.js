@@ -11,6 +11,7 @@ const GLib = imports.gi.GLib;
 const Gvc = imports.gi.Gvc;
 const Pango = imports.gi.Pango;
 const Tooltips = imports.ui.tooltips;
+const Main = imports.ui.main;
 
 ///@koutch Settings 
 const Settings = imports.ui.settings;  // Needed for settings API
@@ -26,14 +27,14 @@ MyPopupSliderMenuItem.prototype = Object.create(PopupMenu.PopupSliderMenuItem.pr
 
 
 MyPopupSliderMenuItem.prototype.setMaxValue = function(value) {
-	this.maxValue = value;
+    this.maxValue = value;
 };
 
 
 //NR
 MyPopupSliderMenuItem.prototype._init = function(value) {
-	this.maxValue = 1;
-	
+    this.maxValue = 1;
+    
     PopupMenu.PopupBaseMenuItem.prototype._init.call(this, { activate: false });
 
     this.actor.connect('key-press-event', Lang.bind(this, this._onKeyPressEvent));
@@ -51,11 +52,13 @@ MyPopupSliderMenuItem.prototype._init = function(value) {
 
     this._releaseId = this._motionId = 0;
     this._dragging = false;
+    this.SLIDER_SCROLL_STEP = 0.05;
+    this.stop_scroll = false; /// to make a short pause when volume reach 100%
 };
 
 //NR
 MyPopupSliderMenuItem.prototype.setValue = function(value) {
-	
+    
     if (isNaN(value))
         throw TypeError('The slider value must be a number');
 
@@ -113,9 +116,34 @@ MyPopupSliderMenuItem.prototype._sliderRepaint = function(area) {
     cr.stroke();
 
     let handleY = height / 2;
-    let handleX = handleRadius + (width - 2 * handleRadius) * this._value / this.maxValue;
-
+    let handleX = 0;
     let color = themeNode.get_foreground_color();
+
+    ///@ Koutch add mark to locate 100% on the slider
+    if ( this.maxValue > 1) { /// maxValue > 100%
+        if ( this._value < 1 ) 
+            color = sliderColor;
+        else
+            color = sliderActiveColor;
+            
+        handleX = handleRadius + (width - 2 * handleRadius) * 1/ this.maxValue;  
+        
+        cr.setSourceRGBA (
+            color.red / 255,
+            color.green / 255,
+            color.blue / 255,
+            color.alpha / 255);
+        /// draw dots under and over the slide bar "(handleY -/+ sliderHeight)"
+        cr.arc(handleX, (handleY - sliderHeight), handleRadius/4 , 0, 2 * Math.PI);
+        cr.fill();
+        cr.arc(handleX, (handleY + sliderHeight), handleRadius/4 , 0, 2 * Math.PI);
+        cr.fill();
+    }
+
+
+    handleX = handleRadius + (width - 2 * handleRadius) * this._value / this.maxValue;
+
+    color = themeNode.get_foreground_color();
     cr.setSourceRGBA (
         color.red / 255,
         color.green / 255,
@@ -123,19 +151,34 @@ MyPopupSliderMenuItem.prototype._sliderRepaint = function(area) {
         color.alpha / 255);
     cr.arc(handleX, handleY, handleRadius, 0, 2 * Math.PI);
     cr.fill();
+     
 };
 
 //NR
 MyPopupSliderMenuItem.prototype._onScrollEvent = function (actor, event) {
     let direction = event.get_scroll_direction();
-
+    if (this.stop_scroll) return; /// to make a short pause when volume reach 100%
     if (direction == Clutter.ScrollDirection.DOWN) {
-        this._value = Math.max(this.maxValue, this._value - SLIDER_SCROLL_STEP);
+        this._value = Math.max(0, this._value - this.SLIDER_SCROLL_STEP);
     }
     else if (direction == Clutter.ScrollDirection.UP) {
-        this._value = Math.min(this.maxValue, this._value + SLIDER_SCROLL_STEP);
+        if (this._value < 0.99999){ /// volume < 100% (0,99999 to fix a bug with output volume ??)
+            this._value = Math.min(1, this._value + this.SLIDER_SCROLL_STEP);
+            if (this._value >= 0.99999) { ///volume == 100%
+                this._value = 1;
+                this.stop_scroll = true; /// to make a short pause when volume reach 100%
+                if (this.stop_scrollTimeoutId) {
+                    Mainloop.source_remove(this.stop_scrollTimeoutId);
+                }
+                this.stop_scrollTimeoutId = Mainloop.timeout_add(1000, Lang.bind(this, function() {
+                    this.stop_scroll = false;
+                }));
+            }       
+        }
+        else
+            this._value = Math.min(this.maxValue, this._value + this.SLIDER_SCROLL_STEP);
     }
-	
+    
     this._slider.queue_repaint();
     this.emit('value-changed', this._value);
 };
@@ -159,13 +202,13 @@ MyPopupSliderMenuItem.prototype._moveHandle = function(absX, absY) {
         newvalue = (relX - handleRadius) / (width - 2 * handleRadius) * this.maxValue;
     
     if (this.oldValue < newvalue) {
-		if (newvalue > 1  && newvalue < 1.17) {
-			newvalue = 1;
-		} else {
-    		this.oldValue = newvalue;
-		}
+        if (newvalue > 1  && newvalue < 1.17) {
+            newvalue = 1;
+        } else {
+            this.oldValue = newvalue;
+        }
     } else {
-    	this.oldValue = newvalue;
+        this.oldValue = newvalue;
     }
     
     
@@ -187,6 +230,29 @@ MyPopupSliderMenuItem.prototype._onKeyPressEvent = function (actor, event) {
     }
     return false;
 };
+
+MyPopupSliderMenuItem.prototype._startDragging = function(actor, event) {
+    if (this._dragging) // don't allow two drags at the same time
+        return;
+
+    this._dragging = true;
+    
+    // FIXME: we should only grab the specific device that originated
+    // the event, but for some weird reason events are still delivered
+    // outside the slider if using clutter_grab_pointer_for_device
+    if (event.get_button()==2) {///middle click
+        this.emit('mute');
+        this._dragging = false;
+        return;
+    }
+    Clutter.grab_pointer(this._slider);
+    this._releaseId = this._slider.connect('button-release-event', Lang.bind(this, this._endDragging));
+    this._motionId = this._slider.connect('motion-event', Lang.bind(this, this._motionEvent));
+    let absX, absY;
+    [absX, absY] = event.get_coords();
+    this._moveHandle(absX, absY);
+};
+
 
 
 
@@ -277,8 +343,8 @@ const MediaServer2PlayerIFace = {
 
 /* global values */
 let icon_path = "/usr/share/cinnamon/theme/";
-let compatible_players = [ "clementine", "mpd", "exaile", "banshee", "rhythmbox", "rhythmbox3", "pragha", "quodlibet", "guayadeque", "amarok", "googlemusicframe", "xbmc", "noise", "xnoise", "gmusicbrowser", "spotify", "audacious", "vlc", "beatbox", "songbird", "pithos", "gnome-mplayer", "nuvolaplayer", "qmmp" ];
-let support_seek = [ "clementine", "banshee", "rhythmbox", "rhythmbox3", "pragha", "quodlibet", "amarok", "noise", "xnoise", "gmusicbrowser", "spotify", "vlc", "beatbox", "gnome-mplayer", "qmmp" ];
+let compatible_players = [ "clementine", "mpd", "exaile", "banshee", "rhythmbox", "rhythmbox3", "pragha", "quodlibet", "guayadeque", "amarok", "googlemusicframe", "xbmc", "noise", "xnoise", "gmusicbrowser", "spotify", "audacious", "vlc", "beatbox", "songbird", "pithos", "gnome-mplayer", "nuvolaplayer", "qmmp", 'deadbeef', 'smplayer', 'tomahawk' ];
+let support_seek = [ "clementine", "banshee", "rhythmbox", "rhythmbox3", "pragha", "quodlibet", "amarok", "noise", "xnoise", "gmusicbrowser", "spotify", "vlc", "beatbox", "gnome-mplayer", "qmmp", 'deadbeef'];
 /* dummy vars for translation */
 let x = _("Playing");
 x = _("Paused");
@@ -951,7 +1017,7 @@ MediaPlayerLauncher.prototype = {
     },
 
     activate: function (event) {
-    	this._menu.actor.hide();
+        this._menu.actor.hide();
         this._app.activate_full(-1, event.get_time());
         return true;
     }
@@ -967,7 +1033,7 @@ MyApplet.prototype = {
 ///@koutch
     _init: function(orientation, panel_height, instance_id) {
         Applet.IconApplet.prototype._init.call(this, orientation, panel_height, instance_id);
-			///@koutch Settings instance_id needed for settings API
+            ///@koutch Settings instance_id needed for settings API
 
         try {
             this.menuManager = new PopupMenu.PopupMenuManager(this);
@@ -988,12 +1054,16 @@ MyApplet.prototype = {
 
             this._control = new Gvc.MixerControl({ name: 'Cinnamon Volume Control' });
             this._control.connect('state-changed', Lang.bind(this, this._onControlStateChanged));
+            this._control.connect('card-added', Lang.bind(this, this._onControlStateChanged));
+            this._control.connect('card-removed', Lang.bind(this, this._onControlStateChanged));
             this._control.connect('default-sink-changed', Lang.bind(this, this._readOutput));
             this._control.connect('default-source-changed', Lang.bind(this, this._readInput));
             this._control.connect('stream-added', Lang.bind(this, this._maybeShowInput));
             this._control.connect('stream-removed', Lang.bind(this, this._maybeShowInput));
             this._volumeMax = 1*this._control.get_vol_max_norm(); // previously was 1.5*this._control.get_vol_max_norm();, but we'd need a little mark on the slider to make it obvious to the user we're going over 100%..
-
+            this.slider_volumeMax = 1;
+            this.stop_scroll = false;/// to make a short pause when volume reach 100% while scrolling the applet
+            
             this._output = null;
             this._outputVolumeId = 0;
             this._outputMutedId = 0;
@@ -1015,24 +1085,26 @@ MyApplet.prototype = {
 
             this._control.open();
 
- 			///@koutch Settings 
-			this.settings = new Settings.AppletSettings(this, "sound-with-apps-volume@koutch", instance_id);
-			this.settings.bindProperty(Settings.BindingDirection.IN, "show-player", "show_player", this._applySettings, null);                            
-			this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player", "show_launch_player", this._applySettings, null);
-			this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player-list", "show_launch_player_list", this._applySettings, null);
-			this.settings.bindProperty(Settings.BindingDirection.IN, "show-app", "show_app", this._applySettings, null);
-			this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-list", "show_app_list", this._applySettings, null);
-			this.settings.bindProperty(Settings.BindingDirection.IN, "show-output-device", "show_output_device", this._applySettings, null);
-			///add settings button in context menu
-			this.edit_menu_item = new PopupMenu.PopupImageMenuItem(_('Settings'), "system-run-symbolic");
-			this.edit_menu_item.connect('activate', Lang.bind(this, function () {
-				Util.spawnCommandLine('cinnamon-settings applets sound-with-apps-volume@koutch');
-			}));
-			this.edit_menu_item.addActor(new St.Button({ label: "   " }));/// to align icon with switch button
-			this._applet_context_menu.addMenuItem(this.edit_menu_item);
+            ///@koutch Settings 
+            this.settings = new Settings.AppletSettings(this, "sound-with-apps-volume@koutch", instance_id);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-player", "show_player", this._applySettings, null);                            
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player", "show_launch_player", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player-list", "show_launch_player_list", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-app", "show_app", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-list", "show_app_list", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-mutebutton", "show_app_mutebutton", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-output-device", "show_output_device", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "volume-max", "volume_max", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "mute-middle-click", "mute_middle_click", this._applySettings, null);
+            ///add settings button in context menu
+            this.edit_menu_item = new PopupMenu.PopupImageMenuItem(_('Settings'), "system-run-symbolic");
+            this.edit_menu_item.connect('activate', Lang.bind(this, function () {
+                Util.spawnCommandLine('cinnamon-settings applets sound-with-apps-volume@koutch');
+            }));
+            this.edit_menu_item.addActor(new St.Button({ label: "   " }));/// to align icon with switch button
+            this._applet_context_menu.addMenuItem(this.edit_menu_item);
 
-            this._volumeControlShown = false;
-            this._showFixedElements();
+            this._applySettings();
 
         }
         catch (e) {
@@ -1041,8 +1113,8 @@ MyApplet.prototype = {
     },
 ///@koucth
     on_applet_removed_from_panel : function() {
-		
-		///@koucth Settings
+        
+        ///@koucth Settings
         this.settings.finalize();    // This is called when a user removes the applet from the panel.. 
 
         if (this._iconTimeoutId) 
@@ -1050,17 +1122,17 @@ MyApplet.prototype = {
     },
 ///@koucth
     on_applet_clicked: function(event) {
-		if (!this.menu.isOpen){
-			///@koutch update application list
-			this._appSubMenu();
+        if (!this.menu.isOpen){
+            ///@koutch update application list
+            this._appSubMenu();
 
-			///@koucth Settings 
-			if (this.show_launch_player_list && this.show_launch_player)
-				this._launchPlayerItem.activate();
-				
-			if (this.show_app_list && this.show_app)
-				this._selectAppItem.activate();
-		}
+            ///@koucth Settings 
+            if (this.show_launch_player_list && this.show_launch_player)
+                this._launchPlayerItem.activate();
+                
+            if (this.show_app_list && this.show_app)
+                this._selectAppItem.activate();
+        }
         this.menu.toggle();
     },
 
@@ -1088,6 +1160,8 @@ MyApplet.prototype = {
         let direction = event.get_scroll_direction();
         let currentVolume = this._output.volume;
 
+        if (this.stop_scroll) return; /// to make a short pause when volume reach 100%
+
         if (direction == Clutter.ScrollDirection.DOWN) {
             let prev_muted = this._output.is_muted;
             this._output.volume = Math.max(0, currentVolume - this._volumeMax * VOLUME_ADJUSTMENT_STEP);
@@ -1099,7 +1173,20 @@ MyApplet.prototype = {
             this._output.push_volume();
         }
         else if (direction == Clutter.ScrollDirection.UP) {
-            this._output.volume = Math.min(this._volumeMax, currentVolume + this._volumeMax * VOLUME_ADJUSTMENT_STEP);
+            if (this._output.volume < this._volumeMax){ /// volume < 100%
+                this._output.volume = Math.min(this._volumeMax, currentVolume + this._volumeMax * VOLUME_ADJUSTMENT_STEP);
+                if (this._output.volume >= this._volumeMax) { /// volume == 100%
+                    this.stop_scroll = true; /// to make a short pause when volume reach 100%
+                    if (this.stop_scrollTimeoutId) {
+                        Mainloop.source_remove(this.stop_scrollTimeoutId);
+                    }
+                    this.stop_scrollTimeoutId = Mainloop.timeout_add(1000, Lang.bind(this, function() {
+                        this.stop_scroll = false;
+                    }));
+                }       
+            }
+            else
+                this._output.volume = Math.min(this._volumeMax * this.slider_volumeMax, currentVolume + this._volumeMax * VOLUME_ADJUSTMENT_STEP);
             this._output.change_is_muted(false);
             this._output.push_volume();
         }
@@ -1126,7 +1213,7 @@ MyApplet.prototype = {
     setIconName: function(icon) {
         this._icon_name = icon;
         this.set_applet_icon_symbolic_name(icon);
-		///@koutch Settings test show_player settings to display volume icone if player is disable
+        ///@koutch Settings test show_player settings to display volume icone if player is disable
         if (this._nbPlayers()>0 && this.show_player) {
             if (this._iconTimeoutId) {
                 Mainloop.source_remove(this._iconTimeoutId);
@@ -1159,9 +1246,9 @@ MyApplet.prototype = {
         ///@koutch Settings refresh the menu : if player is launch when the menu is open
         /// the menu stay open but don't display as it should
         if (this.menu.isOpen && this.show_player){
-			this.menu.toggle();
-			this.on_applet_clicked(null);
-		}
+            this.menu.toggle();
+            this.on_applet_clicked(null);
+        }
 
     },
 ///@koutch
@@ -1183,9 +1270,9 @@ MyApplet.prototype = {
         ///@koutch Settings refresh the menu : if player is closed by the "Quit Player" button in applet player
         /// the menu stay open but don't display as it should
         if (this.menu.isOpen && this.show_player){
-			this.menu.toggle();
-			this.on_applet_clicked(null);
-		}
+            this.menu.toggle();
+            this.on_applet_clicked(null);
+        }
 
     },
 
@@ -1200,29 +1287,29 @@ MyApplet.prototype = {
     _showFixedElements: function() {
         if (this._volumeControlShown) return;
         this._volumeControlShown = true;
-		
-		///@koutch Settings test show_player settings to add 'Launch player' 
-		///if there is players but settings don't show it 
-		///show_launch_player is tested at the end of this function
+        
+        ///@koutch Settings test show_player settings to add 'Launch player' 
+        ///if there is players but settings don't show it 
+        ///show_launch_player is tested at the end of this function
         if (this._nbPlayers()==0 || !this.show_player ){
-			if (this._nbPlayers()>0) 
-				this.menu.removeAll();/// ensure menu is empty
-				
-        	this._availablePlayers = new Array();
+            if (this._nbPlayers()>0) 
+                this.menu.removeAll();/// ensure menu is empty
+                
+            this._availablePlayers = new Array();
             let appsys = Cinnamon.AppSystem.get_default();
             let allApps = appsys.get_all();
             let listedDesktopFiles = new Array();
             for (let y=0; y<allApps.length; y++) {
-            	let app = allApps[y];
-            	let entry = app.get_tree_entry();
-            	let path = entry.get_desktop_file_path();
-            	for (var p=0; p<compatible_players.length; p++) {
+                let app = allApps[y];
+                let entry = app.get_tree_entry();
+                let path = entry.get_desktop_file_path();
+                for (var p=0; p<compatible_players.length; p++) {
                     let desktopFile = compatible_players[p]+".desktop";
-            		if (path.indexOf(desktopFile) != -1 && listedDesktopFiles.indexOf(desktopFile) == -1) {
-                		this._availablePlayers.push(app);
+                    if (path.indexOf(desktopFile) != -1 && listedDesktopFiles.indexOf(desktopFile) == -1) {
+                        this._availablePlayers.push(app);
                         listedDesktopFiles.push(desktopFile);
-            		}
-           		}
+                    }
+                }
             }
             
 
@@ -1244,21 +1331,23 @@ MyApplet.prototype = {
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._outputTitle = new TextImageMenuItem(_("Volume"), "audio-volume-high", false, "right", "sound-volume-menu-item");
         this._outputSlider = new MyPopupSliderMenuItem(0);
-        this._outputSlider.setMaxValue (1.5);
+        this._outputSlider.setMaxValue (this.slider_volumeMax);
         this._outputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_output'));
         this._outputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
+        if (this.mute_middle_click)
+            this._outputSlider.connect('mute', Lang.bind(this, this._toggle_out_mute));
         this.menu.addMenuItem(this._outputTitle);
         this.menu.addMenuItem(this._outputSlider);
 
-		///@koutch create applications submenu
-		this._selectAppItem = new PopupMenu.PopupSubMenuMenuItem(_("  Applications..."), {expend:false });
-		this.menu.addMenuItem(this._selectAppItem);
-		this._appSubMenu();
+        ///@koutch create applications submenu
+        this._selectAppItem = new PopupMenu.PopupSubMenuMenuItem(_("  Applications..."));
+        this.menu.addMenuItem(this._selectAppItem);
+        this._appSubMenu();
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._inputTitle = new PopupMenu.PopupMenuItem(_("Microphone"), { reactive: false });
         this._inputSlider = new MyPopupSliderMenuItem(0);
-        this._inputSlider.setMaxValue (1.5);
+        this._inputSlider.setMaxValue (this.slider_volumeMax);
         this._inputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_input'));
         this._inputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
         this.menu.addMenuItem(this._inputTitle);
@@ -1280,21 +1369,21 @@ MyApplet.prototype = {
         this._volumeChanged (null, null, '_output');
         this._volumeChanged (null, null, '_input');
 
-		///@koutch Settings 
-		if (this.show_launch_player)
-			this._launchPlayerItem.actor.show();
-		else	
-			this._launchPlayerItem.actor.hide();
-			
-		if (this.show_app)
-			this._selectAppItem.actor.show();			
-		else
-			this._selectAppItem.actor.hide();
-			
-		if (this.show_output_device)
-			this._selectDeviceItem.actor.show();
-		else
-			this._selectDeviceItem.actor.hide();
+        ///@koutch Settings 
+        if (this.show_launch_player)
+            this._launchPlayerItem.actor.show();
+        else    
+            this._launchPlayerItem.actor.hide();
+            
+        if (this.show_app)
+            this._selectAppItem.actor.show();           
+        else
+            this._selectAppItem.actor.hide();
+            
+        if (this.show_output_device)
+            this._selectDeviceItem.actor.show();
+        else
+            this._selectDeviceItem.actor.hide();
     },
 
     _sliderChanged: function(slider, value, property) {
@@ -1317,20 +1406,23 @@ MyApplet.prototype = {
     },
 
     _notifyVolumeChange: function() {
-        global.cancel_theme_sound(VOLUME_NOTIFY_ID);
-        global.play_theme_sound(VOLUME_NOTIFY_ID, 'audio-volume-change');
+        Main.soundManager.play('volume');
     },
 
     _mutedChanged: function(object, param_spec, property) {
         let muted = this[property].is_muted;
         let slider = this[property+'Slider'];
-        slider.setValue(muted ? 0 : (this[property].volume / this._volumeMax));
+        ///@koutch disable slider value change on mute
+//        slider.setValue(muted ? 0 : (this[property].volume / this._volumeMax)); 
         if (property == '_output') {
             if (muted) {
                 this.setIconName('audio-volume-muted');
                 this._outputTitle.setIcon('audio-volume-muted');
-                this.set_applet_tooltip(_("Volume") + ": 0%");
-                this._outputTitle.setText(_("Volume") + ": 0%");
+                ///@koutch replace 0% by _("muted") 
+//                this.set_applet_tooltip(_("Volume") + ": 0%");
+                this.set_applet_tooltip(_("Volume") + ": " + _("muted"));
+//                this._outputTitle.setText(_("Volume") + ": 0%");                
+                this._outputTitle.setText(_("Volume") + ": " + _("muted"));
                 this.mute_out_switch.setToggleState(true);
             } else {
                 this.setIconName(this._volumeToIcon(this._output.volume));
@@ -1403,19 +1495,19 @@ MyApplet.prototype = {
             this._mutedChanged (null, null, '_output');
             this._volumeChanged (null, null, '_output');
             let sinks = this._control.get_sinks();
-	        this._selectDeviceItem.menu.removeAll();
-	        for (let i = 0; i < sinks.length; i++) {
-	        	let sink = sinks[i];
-	        	let menuItem = new PopupMenu.PopupMenuItem(sink.get_description());
-	        	if (sinks[i].get_id() == this._output.get_id()) {
-	        		menuItem.setShowDot(true);
-	        	}
-	        	menuItem.connect('activate', Lang.bind(this, function() {
-	        		log('Changing default sink to ' + sink.get_description());
-	                this._control.set_default_sink(sink);
-	            }));
-	            this._selectDeviceItem.menu.addMenuItem(menuItem);
-	        }
+            this._selectDeviceItem.menu.removeAll();
+            for (let i = 0; i < sinks.length; i++) {
+                let sink = sinks[i];
+                let menuItem = new PopupMenu.PopupMenuItem(sink.get_description());
+                if (sinks[i].get_id() == this._output.get_id()) {
+                    menuItem.setShowDot(true);
+                }
+                menuItem.connect('activate', Lang.bind(this, function() {
+                    log('Changing default sink to ' + sink.get_description());
+                    this._control.set_default_sink(sink);
+                }));
+                this._selectDeviceItem.menu.addMenuItem(menuItem);
+            }
         } else {
             this._outputSlider.setValue(0);
             this.setIconName('audio-volume-muted-symbolic');
@@ -1465,95 +1557,163 @@ MyApplet.prototype = {
             this._inputSlider.actor.hide();
         }
     },
-///@koutch create application list	
-    _appSubMenu: function() {				
-		let sink_input_name_length = 20;
-		let sink_input_name = "";
-		let sink_inputs = this._control.get_sink_inputs();
-	    
-	    this._selectAppItem.menu.removeAll();
+///@koutch create application list  
+    _appSubMenu: function() {               
+        let sink_input_name_length = 20;
+        let sink_input_name = "";
+        let sink_inputs = this._control.get_sink_inputs();
+        
+        this._selectAppItem.menu.removeAll();
         this._selectAppItem.actor.hide(); /// hide application list if no application is playing sound
         
-		if (!this.show_app)
-			return;
-	    
-	    for (let i = 0; i < sink_inputs.length; i++) {
-			this._selectAppItem.actor.show();
+        if (!this.show_app)
+            return;
+        
+        for (let i = 0; i < sink_inputs.length; i++) {
+            this._selectAppItem.actor.show();
 
-	       	let sink_input = sink_inputs[i];
+            let sink_input = sink_inputs[i];
 
-			if( sink_input.get_name().length < sink_input_name_length ) 	{
-				sink_input_name = sink_input.get_name();
-			} 
-			else {
-				sink_input_name = sink_input.get_name().substring(0,sink_input_name_length) + '...' ;
-			}
-			
-			let menuItem = new PopupMenu.PopupBaseMenuItem({ reactive: false });
-			menuItem._text = '> ' + sink_input_name + " : ";
-			menuItem._text_percentage = new St.Label({text: menuItem._text + Math.round( sink_input.volume / this._volumeMax * 100) + "%"});
-			menuItem.addActor(menuItem._text_percentage);
-			///@ koutch prevent python icon (e.g. exaile or decibel audio player)
-			if (sink_input.get_icon_name()=='/usr/share/pixmaps/python2.7.xpm')
-				menuItem._icon_name = sink_input.get_name().substring(0, sink_input.get_name().length - 3 );///to remove '.py'
-			else 
-				menuItem._icon_name = sink_input.get_icon_name();		
-				
-			menuItem._icon = new St.Icon({ icon_name: menuItem._icon_name, icon_type: St.IconType.FULLCOLOR, style_class: 'popup-menu-icon' });
-			menuItem.addActor(menuItem._icon);
+            if( sink_input.get_name().length < sink_input_name_length )     {
+                sink_input_name = sink_input.get_name();
+            } 
+            else {
+                sink_input_name = sink_input.get_name().substring(0,sink_input_name_length) + '...' ;
+            }
+            
+            let menuItem = new PopupMenu.PopupBaseMenuItem({reactive: false});
+            menuItem._text = '- ' + sink_input_name + " : ";
+            menuItem._percentage = Math.round( sink_input.volume / this._volumeMax * 100) + "%"
+            if (sink_input.is_muted) menuItem._percentage =  _("muted");            
+            menuItem._text_percentage = new St.Label({text: menuItem._text + menuItem._percentage});
+            menuItem.addActor(menuItem._text_percentage);
+            ///@ koutch prevent python icon (e.g. exaile or decibel audio player)
+            if (sink_input.get_icon_name()=='/usr/share/pixmaps/python2.7.xpm')
+                menuItem._icon_name = sink_input.get_name().substring(0, sink_input.get_name().length - 3 );///to remove '.py'
+            else 
+                menuItem._icon_name = sink_input.get_icon_name();       
+                
+            menuItem._icon = new St.Icon({ icon_name: menuItem._icon_name, icon_type: St.IconType.FULLCOLOR, style_class: 'popup-menu-icon' });
+            menuItem.addActor(menuItem._icon);
+            ///@koutch add mute button
+            if (this.show_app_mutebutton){
+                ///I use "icon_file" because I can't find a better icon than 'audio-volume-muted-blocked-panel' in this way
+                let icon_file = Gio.File.new_for_path('/usr/share/icons/gnome/scalable/status/audio-volume-muted-symbolic.svg');
+                if (icon_file.query_exists(null)) {/// icon is found           
+                    let gicon = new Gio.FileIcon({ file: Gio.file_new_for_path('/usr/share/icons/gnome/scalable/status/audio-volume-muted-symbolic.svg') });
+                    menuItem._muteIcon = new St.Icon({ gicon: gicon, style_class: 'popup-menu-icon' });
+                }
+                else {
+                    menuItem._muteIcon = new St.Icon({icon_name:'audio-volume-muted-blocked-panel', icon_type: St.IconType.FULLCOLOR, icon_size: 16});
+                }
+                menuItem._muteButton = new St.Button({ child: menuItem._muteIcon});
+                menuItem._muteButton.connect('clicked', Lang.bind(this, function(){             
+                   if (!sink_input.is_muted){
+                        sink_input.change_is_muted(true);
+                        menuItem._percentage =  _("muted");          
+                    }
+                    if (sink_input.is_muted){
+                        sink_input.change_is_muted(false);
+                        menuItem._percentage = Math.round( sink_input.volume / this._volumeMax * 100) + "%"
+                     }
+                    ///@koutch update menuItem percentage           
+                    menuItem.removeActor(menuItem._text_percentage);
+                    menuItem.removeActor(menuItem._icon);
+                    if (this.show_app_mutebutton)
+                        menuItem.removeActor(menuItem._muteButton);
+                    menuItem._text_percentage = new St.Label({text: menuItem._text + menuItem._percentage});
+                    menuItem.addActor(menuItem._text_percentage);
+                    menuItem.addActor(menuItem._icon);
+                    if (this.show_app_mutebutton)
+                        menuItem.addActor(menuItem._muteButton);
+                }));
+                menuItem.addActor(menuItem._muteButton);
+            }
 
             let sink_inputSlider = new MyPopupSliderMenuItem(sink_input.volume / this._volumeMax);
-            sink_inputSlider.setMaxValue (1.5);
-			sink_inputSlider.connect('value-changed', Lang.bind(this, function(slider, value ) {			
-		        let volume = value * this._volumeMax;
-				let prev_muted = sink_input.is_muted;
+            sink_inputSlider.setMaxValue (this.slider_volumeMax);
+            sink_inputSlider.setValue (sink_input.volume / this._volumeMax);
+            sink_inputSlider.connect('value-changed', Lang.bind(this, function(slider, value ) {            
+                let volume = value * this._volumeMax;
+                let prev_muted = sink_input.is_muted;
 
-				if (volume < 1) {
-					sink_input.volume = 0;
-					if (!prev_muted)
-						sink_input.change_is_muted(true);
-				}
-				else {
-					sink_input.volume = volume;
-					if (prev_muted)
-						sink_input.change_is_muted(false);
-				}
+                if (volume < 1) {
+                    sink_input.volume = 0;
+                    if (!prev_muted)
+                        sink_input.change_is_muted(true);
+                    menuItem._percentage =  _("muted");          
+                }
+                else {
+                    sink_input.volume = volume;
+                    if (prev_muted)
+                        sink_input.change_is_muted(false);
+                    menuItem._percentage = Math.round( sink_input.volume / this._volumeMax * 100) + "%"
+                }
 
-				sink_input.push_volume();
-				
-				///@koutch update menuItem percentage			
-				menuItem.removeActor(menuItem._text_percentage);
-				menuItem.removeActor(menuItem._icon);
-				menuItem._text_percentage = new St.Label({text: menuItem._text + Math.round( sink_input.volume / this._volumeMax * 100) + "%"});
-				menuItem.addActor(menuItem._text_percentage);
-				menuItem.addActor(menuItem._icon);
-			}));
-			
+                sink_input.push_volume();
+                
+                ///@koutch update menuItem percentage           
+                menuItem.removeActor(menuItem._text_percentage);
+                menuItem.removeActor(menuItem._icon);
+                if (this.show_app_mutebutton)
+                    menuItem.removeActor(menuItem._muteButton);
+                menuItem._text_percentage = new St.Label({text: menuItem._text + menuItem._percentage});
+                menuItem.addActor(menuItem._text_percentage);
+                menuItem.addActor(menuItem._icon);
+                if (this.show_app_mutebutton)
+                    menuItem.addActor(menuItem._muteButton);
+            }));
+
+            if (this.mute_middle_click){
+                sink_inputSlider.connect('mute', Lang.bind(this, function(slider) { 
+                   if (!sink_input.is_muted){
+                        sink_input.change_is_muted(true);
+                        menuItem._percentage =  _("muted");          
+                    }
+                    if (sink_input.is_muted){
+                        sink_input.change_is_muted(false);
+                        menuItem._percentage = Math.round( sink_input.volume / this._volumeMax * 100) + "%"
+                     }
+                    ///@koutch update menuItem percentage           
+                    menuItem.removeActor(menuItem._text_percentage);
+                    menuItem.removeActor(menuItem._icon);
+                    if (this.show_app_mutebutton)
+                        menuItem.removeActor(menuItem._muteButton);
+                    menuItem._text_percentage = new St.Label({text: menuItem._text + menuItem._percentage});
+                    menuItem.addActor(menuItem._text_percentage);
+                    menuItem.addActor(menuItem._icon);
+                    if (this.show_app_mutebutton)
+                        menuItem.addActor(menuItem._muteButton);
+                }));
+            }
             this._selectAppItem.menu.addMenuItem(menuItem);
             this._selectAppItem.menu.addMenuItem(sink_inputSlider);
         }
     },
-///@koutch Settings 		
+///@koutch Settings         
     _applySettings: function() {
-		
+
+        if (this.volume_max) this.slider_volumeMax = 1.5;
+        else this.slider_volumeMax = 1;
+        
         this._cleanup();
         this._volumeControlShown = false;
         /// add players if any
-		if ( this.show_player && this._nbPlayers()>0 ){
-			for (owner in this._players) {
-				this._addPlayer(owner);
-			}
-		}
+        if ( this.show_player && this._nbPlayers()>0 ){
+            for (owner in this._players) {
+                this._addPlayer(owner);
+            }
+        }
 
         this._showFixedElements();
         this._readOutput();
         this.setIconName(this._icon_name);
         /// refresh the menu if it has been open while applying settings
         if (this.menu.isOpen){
-			this.menu.toggle();
-			this.on_applet_clicked(null);
-		}
-	}
+            this.menu.toggle();
+            this.on_applet_clicked(null);
+        }
+    }
 
 };
 
