@@ -17,6 +17,7 @@ const Main = imports.ui.main;
 const Settings = imports.ui.settings;  // Needed for settings API
 const Gtk = imports.gi.Gtk;
 const Util = imports.misc.util;
+const Config = imports.misc.config; // To check cinnamon version to show/hide settings in context menu 
 ///@koutch Settings 
 
 function MyPopupSliderMenuItem() {
@@ -343,8 +344,16 @@ const MediaServer2PlayerIFace = {
 
 /* global values */
 let icon_path = "/usr/share/cinnamon/theme/";
-let compatible_players = [ "clementine", "mpd", "exaile", "banshee", "rhythmbox", "rhythmbox3", "pragha", "quodlibet", "guayadeque", "amarok", "googlemusicframe", "xbmc", "noise", "xnoise", "gmusicbrowser", "spotify", "audacious", "vlc", "beatbox", "songbird", "pithos", "gnome-mplayer", "nuvolaplayer", "qmmp", 'deadbeef', 'smplayer', 'tomahawk' ];
-let support_seek = [ "clementine", "banshee", "rhythmbox", "rhythmbox3", "pragha", "quodlibet", "amarok", "noise", "xnoise", "gmusicbrowser", "spotify", "vlc", "beatbox", "gnome-mplayer", "qmmp", 'deadbeef'];
+let compatible_players = [
+    'clementine', 'mpd', 'exaile', 'banshee', 'rhythmbox', 'rhythmbox3',
+    'pragha', 'quodlibet', 'guayadeque', 'amarok', 'googlemusicframe', 'xbmc',
+    'noise', 'xnoise', 'gmusicbrowser', 'spotify', 'audacious', 'vlc',
+    'beatbox', 'songbird', 'pithos', 'gnome-mplayer', 'nuvolaplayer', 'qmmp',
+    'deadbeef', 'smplayer', 'tomahawk' ];
+let support_seek = [ 
+    'clementine', 'banshee', 'rhythmbox', 'rhythmbox3', 'pragha', 'quodlibet',
+    'amarok', 'xnoise', 'gmusicbrowser', 'spotify', 'vlc', 'beatbox',
+    'gnome-mplayer', 'qmmp', 'deadbeef'];
 /* dummy vars for translation */
 let x = _("Playing");
 x = _("Paused");
@@ -1096,13 +1105,21 @@ MyApplet.prototype = {
             this.settings.bindProperty(Settings.BindingDirection.IN, "show-output-device", "show_output_device", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "volume-max", "volume_max", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "mute-middle-click", "mute_middle_click", this._applySettings, null);
-            ///add settings button in context menu
-            this.edit_menu_item = new PopupMenu.PopupImageMenuItem(_('Settings'), "system-run-symbolic");
-            this.edit_menu_item.connect('activate', Lang.bind(this, function () {
-                Util.spawnCommandLine('cinnamon-settings applets sound-with-apps-volume@koutch');
-            }));
-            this.edit_menu_item.addActor(new St.Button({ label: "   " }));/// to align icon with switch button
-            this._applet_context_menu.addMenuItem(this.edit_menu_item);
+
+            ///add settings button in context menu 
+            // configuration via context menu is automatically provided in Cinnamon 2.0+
+            let cinnamonVersion = Config.PACKAGE_VERSION.split('.')
+            let majorVersion = parseInt(cinnamonVersion[0])
+
+            // for Cinnamon 1.x, build a menu item
+            if (majorVersion < 2) {
+                this.edit_menu_item = new PopupMenu.PopupImageMenuItem(_('Settings'), "system-run-symbolic");
+                this.edit_menu_item.connect('activate', Lang.bind(this, function () {
+                    Util.spawnCommandLine('cinnamon-settings applets sound-with-apps-volume@koutch');
+                }));
+                this.edit_menu_item.addActor(new St.Button({ label: "   " }));/// to align icon with switch button
+                this._applet_context_menu.addMenuItem(this.edit_menu_item);
+            }
 
             this._applySettings();
 
