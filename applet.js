@@ -12,250 +12,242 @@ const Gvc = imports.gi.Gvc;
 const Pango = imports.gi.Pango;
 const Tooltips = imports.ui.tooltips;
 const Main = imports.ui.main;
+const Settings = imports.ui.settings;
 
 ///@koutch Settings 
-const Settings = imports.ui.settings;  // Needed for settings API
 const Gtk = imports.gi.Gtk;
 const Util = imports.misc.util;
 const Config = imports.misc.config; // To check cinnamon version to show/hide settings in context menu 
 ///@koutch Settings 
 
+///@koutch 150% silder
 function MyPopupSliderMenuItem() {
     this._init.apply(this, arguments);
 }
-MyPopupSliderMenuItem.prototype = Object.create(PopupMenu.PopupSliderMenuItem.prototype);
+
+MyPopupSliderMenuItem.prototype = {
+	__proto__: PopupMenu.PopupSliderMenuItem.prototype,
+	_init: function(value) {
+		this.maxValue = 1;
+		
+		PopupMenu.PopupBaseMenuItem.prototype._init.call(this, { activate: false });
+
+		this.actor.connect('key-press-event', Lang.bind(this, this._onKeyPressEvent));
+
+		if (isNaN(value))
+			// Avoid spreading NaNs around
+			throw TypeError('The slider value must be a number');
+		this._value = Math.max(Math.min(value, this.maxValue), 0);
+
+		this._slider = new St.DrawingArea({ style_class: 'popup-slider-menu-item', reactive: true });
+		this.addActor(this._slider, { span: -1, expand: true });
+		this._slider.connect('repaint', Lang.bind(this, this._sliderRepaint));
+		this.actor.connect('button-press-event', Lang.bind(this, this._startDragging));
+		this.actor.connect('scroll-event', Lang.bind(this, this._onScrollEvent));
+
+		this._releaseId = this._motionId = 0;
+		this._dragging = false;
+		this.SLIDER_SCROLL_STEP = 0.05;
+		this.stop_scroll = false; /// to make a short pause when volume reach 100%
+	},	
+	
+	setMaxValue: function(value) {
+		this.maxValue = value;
+	},
+
+	setValue: function(value) {
+		
+		if (isNaN(value))
+			throw TypeError('The slider value must be a number');
+
+		this._value = Math.max(Math.min(value, this.maxValue), 0);
+		this._slider.queue_repaint();
+	},
+
+	_sliderRepaint: function(area) {
+		let cr = area.get_context();
+		let themeNode = area.get_theme_node();
+		let [width, height] = area.get_surface_size();
+
+		let handleRadius = themeNode.get_length('-slider-handle-radius');
+
+		let sliderWidth = width - 2 * handleRadius;
+		let sliderHeight = themeNode.get_length('-slider-height');
+
+		let sliderBorderWidth = themeNode.get_length('-slider-border-width');
+
+		let sliderBorderColor = themeNode.get_color('-slider-border-color');
+		let sliderColor = themeNode.get_color('-slider-background-color');
+
+		let sliderActiveBorderColor = themeNode.get_color('-slider-active-border-color');
+		let sliderActiveColor = themeNode.get_color('-slider-active-background-color');
+
+		cr.setSourceRGBA (
+			sliderActiveColor.red / 255,
+			sliderActiveColor.green / 255,
+			sliderActiveColor.blue / 255,
+			sliderActiveColor.alpha / 255);
+		cr.rectangle(handleRadius, (height - sliderHeight) / 2, sliderWidth * this._value / this.maxValue, sliderHeight);
+		cr.fillPreserve();
+		cr.setSourceRGBA (
+			sliderActiveBorderColor.red / 255,
+			sliderActiveBorderColor.green / 255,
+			sliderActiveBorderColor.blue / 255,
+			sliderActiveBorderColor.alpha / 255);
+		cr.setLineWidth(sliderBorderWidth);
+		cr.stroke();
+
+		cr.setSourceRGBA (
+			sliderColor.red / 255,
+			sliderColor.green / 255,
+			sliderColor.blue / 255,
+			sliderColor.alpha / 255);
+		cr.rectangle(handleRadius + sliderWidth * this._value / this.maxValue, (height - sliderHeight) / 2, sliderWidth * (1 - this._value / this.maxValue), sliderHeight);
+		cr.fillPreserve();
+		cr.setSourceRGBA (
+			sliderBorderColor.red / 255,
+			sliderBorderColor.green / 255,
+			sliderBorderColor.blue / 255,
+			sliderBorderColor.alpha / 255);
+		cr.setLineWidth(sliderBorderWidth);
+		cr.stroke();
+
+		let handleY = height / 2;
+		let handleX = 0;
+		let color = themeNode.get_foreground_color();
+
+		///@ Koutch add mark to locate 100% on the slider
+		if ( this.maxValue > 1) { /// maxValue > 100%
+			if ( this._value < 1 ) 
+				color = sliderColor;
+			else
+				color = sliderActiveColor;
+				
+			handleX = handleRadius + (width - 2 * handleRadius) * 1/ this.maxValue;  
+			
+			cr.setSourceRGBA (
+				color.red / 255,
+				color.green / 255,
+				color.blue / 255,
+				color.alpha / 255);
+			/// draw dots under and over the slide bar "(handleY -/+ sliderHeight)"
+			cr.arc(handleX, (handleY - sliderHeight), handleRadius/4 , 0, 2 * Math.PI);
+			cr.fill();
+			cr.arc(handleX, (handleY + sliderHeight), handleRadius/4 , 0, 2 * Math.PI);
+			cr.fill();
+		}
 
 
+		handleX = handleRadius + (width - 2 * handleRadius) * this._value / this.maxValue;
 
-MyPopupSliderMenuItem.prototype.setMaxValue = function(value) {
-    this.maxValue = value;
+		color = themeNode.get_foreground_color();
+		cr.setSourceRGBA (
+			color.red / 255,
+			color.green / 255,
+			color.blue / 255,
+			color.alpha / 255);
+		cr.arc(handleX, handleY, handleRadius, 0, 2 * Math.PI);
+		cr.fill();
+		 
+	},
+
+	_onScrollEvent: function (actor, event) {
+		let direction = event.get_scroll_direction();
+		if (this.stop_scroll) return; /// to make a short pause when volume reach 100%
+		if (direction == Clutter.ScrollDirection.DOWN) {
+			this._value = Math.max(0, this._value - this.SLIDER_SCROLL_STEP);
+		}
+		else if (direction == Clutter.ScrollDirection.UP) {
+			if (this._value < 0.99999){ /// volume < 100% (0,99999 to fix a bug with output volume ??)
+				this._value = Math.min(1, this._value + this.SLIDER_SCROLL_STEP);
+				if (this._value >= 0.99999) { ///volume == 100%
+					this._value = 1;
+					this.stop_scroll = true; /// to make a short pause when volume reach 100%
+					if (this.stop_scrollTimeoutId) {
+						Mainloop.source_remove(this.stop_scrollTimeoutId);
+					}
+					this.stop_scrollTimeoutId = Mainloop.timeout_add(1000, Lang.bind(this, function() {
+						this.stop_scroll = false;
+					}));
+				}       
+			}
+			else
+				this._value = Math.min(this.maxValue, this._value + this.SLIDER_SCROLL_STEP);
+		}
+		
+		this._slider.queue_repaint();
+		this.emit('value-changed', this._value);
+		this.emit('drag-end'); /// to play system's volume change sounds
+	},
+
+	_moveHandle: function(absX, absY) {
+		let relX, relY, sliderX, sliderY;
+		[sliderX, sliderY] = this._slider.get_transformed_position();
+		relX = absX - sliderX;
+		relY = absY - sliderY;
+
+		let width = this._slider.width;
+		let handleRadius = this._slider.get_theme_node().get_length('-slider-handle-radius');
+
+		let newvalue;
+		if (relX < handleRadius)
+			newvalue = 0;
+		else if (relX > width - handleRadius)
+			newvalue = this.maxValue;
+		else
+			newvalue = (relX - handleRadius) / (width - 2 * handleRadius) * this.maxValue;
+		
+		if (this.oldValue < newvalue) {
+			if (newvalue > 1  && newvalue < 1.17) {
+				newvalue = 1;
+			} else {
+				this.oldValue = newvalue;
+			}
+		} else {
+			this.oldValue = newvalue;
+		}
+		
+		
+		this._value = newvalue;
+		this._slider.queue_repaint();
+		this.emit('value-changed', this._value);
+	},
+
+	_onKeyPressEvent: function (actor, event) {
+		let key = event.get_key_symbol();
+		if (key == Clutter.KEY_Right || key == Clutter.KEY_Left) {
+			let delta = key == Clutter.KEY_Right ? 0.1 : -0.1;
+			this._value = Math.max(0, Math.min(this._value + delta, this.maxValue));
+			this._slider.queue_repaint();
+			this.emit('value-changed', this._value);
+			this.emit('drag-end');
+			return true;
+		}
+		return false;
+	},
+
+	_startDragging: function(actor, event) {
+		if (this._dragging) // don't allow two drags at the same time
+			return;
+
+		this._dragging = true;
+		
+		// FIXME: we should only grab the specific device that originated
+		// the event, but for some weird reason events are still delivered
+		// outside the slider if using clutter_grab_pointer_for_device
+		if (event.get_button()==2) {///middle click
+			this.emit('mute');
+			this._dragging = false;
+			return;
+		}
+		Clutter.grab_pointer(this._slider);
+		this._releaseId = this._slider.connect('button-release-event', Lang.bind(this, this._endDragging));
+		this._motionId = this._slider.connect('motion-event', Lang.bind(this, this._motionEvent));
+		let absX, absY;
+		[absX, absY] = event.get_coords();
+		this._moveHandle(absX, absY);
+	}
 };
-
-
-//NR
-MyPopupSliderMenuItem.prototype._init = function(value) {
-    this.maxValue = 1;
-    
-    PopupMenu.PopupBaseMenuItem.prototype._init.call(this, { activate: false });
-
-    this.actor.connect('key-press-event', Lang.bind(this, this._onKeyPressEvent));
-
-    if (isNaN(value))
-        // Avoid spreading NaNs around
-        throw TypeError('The slider value must be a number');
-    this._value = Math.max(Math.min(value, this.maxValue), 0);
-
-    this._slider = new St.DrawingArea({ style_class: 'popup-slider-menu-item', reactive: true });
-    this.addActor(this._slider, { span: -1, expand: true });
-    this._slider.connect('repaint', Lang.bind(this, this._sliderRepaint));
-    this.actor.connect('button-press-event', Lang.bind(this, this._startDragging));
-    this.actor.connect('scroll-event', Lang.bind(this, this._onScrollEvent));
-
-    this._releaseId = this._motionId = 0;
-    this._dragging = false;
-    this.SLIDER_SCROLL_STEP = 0.05;
-    this.stop_scroll = false; /// to make a short pause when volume reach 100%
-};
-
-//NR
-MyPopupSliderMenuItem.prototype.setValue = function(value) {
-    
-    if (isNaN(value))
-        throw TypeError('The slider value must be a number');
-
-    this._value = Math.max(Math.min(value, this.maxValue), 0);
-    this._slider.queue_repaint();
-};
-
-// NR
-MyPopupSliderMenuItem.prototype._sliderRepaint = function(area) {
-    let cr = area.get_context();
-    let themeNode = area.get_theme_node();
-    let [width, height] = area.get_surface_size();
-
-    let handleRadius = themeNode.get_length('-slider-handle-radius');
-
-    let sliderWidth = width - 2 * handleRadius;
-    let sliderHeight = themeNode.get_length('-slider-height');
-
-    let sliderBorderWidth = themeNode.get_length('-slider-border-width');
-
-    let sliderBorderColor = themeNode.get_color('-slider-border-color');
-    let sliderColor = themeNode.get_color('-slider-background-color');
-
-    let sliderActiveBorderColor = themeNode.get_color('-slider-active-border-color');
-    let sliderActiveColor = themeNode.get_color('-slider-active-background-color');
-
-    cr.setSourceRGBA (
-        sliderActiveColor.red / 255,
-        sliderActiveColor.green / 255,
-        sliderActiveColor.blue / 255,
-        sliderActiveColor.alpha / 255);
-    cr.rectangle(handleRadius, (height - sliderHeight) / 2, sliderWidth * this._value / this.maxValue, sliderHeight);
-    cr.fillPreserve();
-    cr.setSourceRGBA (
-        sliderActiveBorderColor.red / 255,
-        sliderActiveBorderColor.green / 255,
-        sliderActiveBorderColor.blue / 255,
-        sliderActiveBorderColor.alpha / 255);
-    cr.setLineWidth(sliderBorderWidth);
-    cr.stroke();
-
-    cr.setSourceRGBA (
-        sliderColor.red / 255,
-        sliderColor.green / 255,
-        sliderColor.blue / 255,
-        sliderColor.alpha / 255);
-    cr.rectangle(handleRadius + sliderWidth * this._value / this.maxValue, (height - sliderHeight) / 2, sliderWidth * (1 - this._value / this.maxValue), sliderHeight);
-    cr.fillPreserve();
-    cr.setSourceRGBA (
-        sliderBorderColor.red / 255,
-        sliderBorderColor.green / 255,
-        sliderBorderColor.blue / 255,
-        sliderBorderColor.alpha / 255);
-    cr.setLineWidth(sliderBorderWidth);
-    cr.stroke();
-
-    let handleY = height / 2;
-    let handleX = 0;
-    let color = themeNode.get_foreground_color();
-
-    ///@ Koutch add mark to locate 100% on the slider
-    if ( this.maxValue > 1) { /// maxValue > 100%
-        if ( this._value < 1 ) 
-            color = sliderColor;
-        else
-            color = sliderActiveColor;
-            
-        handleX = handleRadius + (width - 2 * handleRadius) * 1/ this.maxValue;  
-        
-        cr.setSourceRGBA (
-            color.red / 255,
-            color.green / 255,
-            color.blue / 255,
-            color.alpha / 255);
-        /// draw dots under and over the slide bar "(handleY -/+ sliderHeight)"
-        cr.arc(handleX, (handleY - sliderHeight), handleRadius/4 , 0, 2 * Math.PI);
-        cr.fill();
-        cr.arc(handleX, (handleY + sliderHeight), handleRadius/4 , 0, 2 * Math.PI);
-        cr.fill();
-    }
-
-
-    handleX = handleRadius + (width - 2 * handleRadius) * this._value / this.maxValue;
-
-    color = themeNode.get_foreground_color();
-    cr.setSourceRGBA (
-        color.red / 255,
-        color.green / 255,
-        color.blue / 255,
-        color.alpha / 255);
-    cr.arc(handleX, handleY, handleRadius, 0, 2 * Math.PI);
-    cr.fill();
-     
-};
-
-//NR
-MyPopupSliderMenuItem.prototype._onScrollEvent = function (actor, event) {
-    let direction = event.get_scroll_direction();
-    if (this.stop_scroll) return; /// to make a short pause when volume reach 100%
-    if (direction == Clutter.ScrollDirection.DOWN) {
-        this._value = Math.max(0, this._value - this.SLIDER_SCROLL_STEP);
-    }
-    else if (direction == Clutter.ScrollDirection.UP) {
-        if (this._value < 0.99999){ /// volume < 100% (0,99999 to fix a bug with output volume ??)
-            this._value = Math.min(1, this._value + this.SLIDER_SCROLL_STEP);
-            if (this._value >= 0.99999) { ///volume == 100%
-                this._value = 1;
-                this.stop_scroll = true; /// to make a short pause when volume reach 100%
-                if (this.stop_scrollTimeoutId) {
-                    Mainloop.source_remove(this.stop_scrollTimeoutId);
-                }
-                this.stop_scrollTimeoutId = Mainloop.timeout_add(1000, Lang.bind(this, function() {
-                    this.stop_scroll = false;
-                }));
-            }       
-        }
-        else
-            this._value = Math.min(this.maxValue, this._value + this.SLIDER_SCROLL_STEP);
-    }
-    
-    this._slider.queue_repaint();
-    this.emit('value-changed', this._value);
-};
-
-// NR
-MyPopupSliderMenuItem.prototype._moveHandle = function(absX, absY) {
-    let relX, relY, sliderX, sliderY;
-    [sliderX, sliderY] = this._slider.get_transformed_position();
-    relX = absX - sliderX;
-    relY = absY - sliderY;
-
-    let width = this._slider.width;
-    let handleRadius = this._slider.get_theme_node().get_length('-slider-handle-radius');
-
-    let newvalue;
-    if (relX < handleRadius)
-        newvalue = 0;
-    else if (relX > width - handleRadius)
-        newvalue = this.maxValue;
-    else
-        newvalue = (relX - handleRadius) / (width - 2 * handleRadius) * this.maxValue;
-    
-    if (this.oldValue < newvalue) {
-        if (newvalue > 1  && newvalue < 1.17) {
-            newvalue = 1;
-        } else {
-            this.oldValue = newvalue;
-        }
-    } else {
-        this.oldValue = newvalue;
-    }
-    
-    
-    this._value = newvalue;
-    this._slider.queue_repaint();
-    this.emit('value-changed', this._value);
-};
-
-// NR
-MyPopupSliderMenuItem.prototype._onKeyPressEvent = function (actor, event) {
-    let key = event.get_key_symbol();
-    if (key == Clutter.KEY_Right || key == Clutter.KEY_Left) {
-        let delta = key == Clutter.KEY_Right ? 0.1 : -0.1;
-        this._value = Math.max(0, Math.min(this._value + delta, this.maxValue));
-        this._slider.queue_repaint();
-        this.emit('value-changed', this._value);
-        this.emit('drag-end');
-        return true;
-    }
-    return false;
-};
-
-MyPopupSliderMenuItem.prototype._startDragging = function(actor, event) {
-    if (this._dragging) // don't allow two drags at the same time
-        return;
-
-    this._dragging = true;
-    
-    // FIXME: we should only grab the specific device that originated
-    // the event, but for some weird reason events are still delivered
-    // outside the slider if using clutter_grab_pointer_for_device
-    if (event.get_button()==2) {///middle click
-        this.emit('mute');
-        this._dragging = false;
-        return;
-    }
-    Clutter.grab_pointer(this._slider);
-    this._releaseId = this._slider.connect('button-release-event', Lang.bind(this, this._endDragging));
-    this._motionId = this._slider.connect('motion-event', Lang.bind(this, this._motionEvent));
-    let absX, absY;
-    [absX, absY] = event.get_coords();
-    this._moveHandle(absX, absY);
-};
-
-
-
 
 const PropIFace = {
     name: 'org.freedesktop.DBus.Properties',
@@ -349,11 +341,12 @@ let compatible_players = [
     'pragha', 'quodlibet', 'guayadeque', 'amarok', 'googlemusicframe', 'xbmc',
     'noise', 'xnoise', 'gmusicbrowser', 'spotify', 'audacious', 'vlc',
     'beatbox', 'songbird', 'pithos', 'gnome-mplayer', 'nuvolaplayer', 'qmmp',
-    'deadbeef', 'smplayer', 'tomahawk' ];
-let support_seek = [ 
+    'deadbeef', 'smplayer', 'tomahawk', 'potamus', 'musique', 'bmp', 'atunes', 
+    'muine', 'xmms'];
+let support_seek = [
     'clementine', 'banshee', 'rhythmbox', 'rhythmbox3', 'pragha', 'quodlibet',
-    'amarok', 'xnoise', 'gmusicbrowser', 'spotify', 'vlc', 'beatbox',
-    'gnome-mplayer', 'qmmp', 'deadbeef'];
+    'amarok', 'xnoise', 'gmusicbrowser', 'spotify', 'vlc', 'gnome-mplayer', 
+    'qmmp', 'deadbeef', 'audacious'];
 /* dummy vars for translation */
 let x = _("Playing");
 x = _("Paused");
@@ -363,7 +356,6 @@ const VOLUME_NOTIFY_ID = 1;
 const VOLUME_ADJUSTMENT_STEP = 0.05; /* Volume adjustment step in % */
 
 const ICON_SIZE = 28;
-
 
 function Prop() {
     this._init.apply(this, arguments);
@@ -536,7 +528,7 @@ ControlButton.prototype = {
             style_class: 'sound-button-icon',
         });
         this.button.set_child(this.icon);
-        this.actor.add_actor(this.button);        
+        this.actor.add_actor(this.button);
     },
     getActor: function() {
         return this.actor;
@@ -732,7 +724,7 @@ Player.prototype = {
                     this._setStatus(iface, value["playbackStatus"]);
                 if (value["metadata"])
                     this._setMetadata(sender, value["metadata"]);
-            } 
+            }
         }));
 
         this._mediaServerPlayer.connect('Seeked', Lang.bind(this, function(sender, value) {
@@ -768,7 +760,7 @@ Player.prototype = {
     _updatePositionSlider: function(position) {
         this._mediaServerPlayer.getCanSeek(Lang.bind(this, function(sender, canSeek) {
             this._canSeek = canSeek;
-            
+
             if (this._songLength == 0 || position == false)
                 this._canSeek = false
 
@@ -801,9 +793,6 @@ Player.prototype = {
         if (metadata["mpris:length"]) {
             // song length in secs
             this._songLength = metadata["mpris:length"] / 1000000;
-            // FIXME upstream
-            if (this._name == "quodlibet")
-                this._songLength = metadata["mpris:length"] / 1000;
             // reset timer
             this._stopTimer();
             if (this._playerStatus == "Playing")
@@ -825,7 +814,7 @@ Player.prototype = {
             this._title.setLabel(metadata["xesam:title"].toString());
         else
             this._title.setLabel(_("Unknown Title"));
-        
+
         if (metadata["mpris:trackid"]) {
             this._trackObj = metadata["mpris:trackid"];
         }
@@ -834,6 +823,10 @@ Player.prototype = {
         if (metadata["mpris:artUrl"]) {
             if (this._trackCoverFile != metadata["mpris:artUrl"].toString()) {
                 this._trackCoverFile = metadata["mpris:artUrl"].toString();
+                
+                if ( this._name === "spotify" )
+                    this._trackCoverFile = this._trackCoverFile.replace("/thumb/", "/300/");
+
                 change = true;
             }
         }
@@ -850,8 +843,7 @@ Player.prototype = {
                 if (this._trackCoverFile.match(/^http/)) {
                     this._hideCover();
                     let cover = Gio.file_new_for_uri(decodeURIComponent(this._trackCoverFile));
-                    if (!this._trackCoverFileTmp)
-                        this._trackCoverFileTmp = Gio.file_new_tmp('XXXXXX.mediaplayer-cover')[0];
+                    this._trackCoverFileTmp = Gio.file_new_tmp('XXXXXX.mediaplayer-cover')[0];
                     cover.read_async(null, null, Lang.bind(this, this._onReadCover));
                 }
                 else {
@@ -863,6 +855,7 @@ Player.prototype = {
             else
                 this._showCover(false);
         }
+        this._system_status_button.setAppletTextIcon(this, true);
     },
 
     _getMetadata: function() {
@@ -876,15 +869,20 @@ Player.prototype = {
         this._playerStatus = status;
         if (status == "Playing") {
             this._playButton.setIcon("media-playback-pause");
+            this._system_status_button.setAppletTextIcon(this, true);
             this._runTimer();
         }
         else if (status == "Paused") {
             this._playButton.setIcon("media-playback-start");
+            this._system_status_button.setAppletTextIcon(this, false);
             this._pauseTimer();
         }
         else if (status == "Stopped") {
             this._playButton.setIcon("media-playback-start");
+            this._system_status_button.setAppletTextIcon(this, false);
             this._stopTimer();
+        } else {
+            this._system_status_button.setAppletTextIcon(this, false);
         }
 
         this._playerInfo.setImage("player-" + status.toLowerCase());
@@ -980,6 +978,7 @@ Player.prototype = {
             onComplete: Lang.bind(this, function() {*/
                 if (! cover_path || ! GLib.file_test(cover_path, GLib.FileTest.EXISTS)) {
                     this._trackCover.set_child(new St.Icon({icon_name: "media-optical-cd-audio", icon_size: 210, icon_type: St.IconType.FULLCOLOR}));
+                    cover_path = null;
                 }
                 else {
                     let l = new Clutter.BinLayout();
@@ -990,6 +989,7 @@ Player.prototype = {
                     b.add_actor(c);
                     this._trackCover.set_child(b);
                 }
+                this._system_status_button.setAppletTextIcon(this, cover_path);
                 /*Tweener.addTween(this._trackCover, { opacity: 255,
                     time: 0.3,
                     transition: 'easeInCubic'
@@ -1026,25 +1026,63 @@ MediaPlayerLauncher.prototype = {
     },
 
     activate: function (event) {
-        this._menu.actor.hide();
+    	this._menu.actor.hide();
         this._app.activate_full(-1, event.get_time());
         return true;
     }
 
 };
 
-function MyApplet(orientation, panel_height, instance_id) {
-    this._init(orientation, panel_height, instance_id);
+function MyApplet(metadata, orientation, panel_height, instanceId) {
+    this._init(metadata, orientation, panel_height, instanceId);
 }
-///@koutch
-MyApplet.prototype = {
-    __proto__: Applet.IconApplet.prototype,
-///@koutch
-    _init: function(orientation, panel_height, instance_id) {
-        Applet.IconApplet.prototype._init.call(this, orientation, panel_height, instance_id);
-            ///@koutch Settings instance_id needed for settings API
 
+MyApplet.prototype = {
+    __proto__: Applet.TextIconApplet.prototype,
+
+    _init: function(metadata, orientation, panel_height, instanceId) {
+        Applet.TextIconApplet.prototype._init.call(this, orientation, panel_height);
         try {
+            this.metadata = metadata;
+            this.settings = new Settings.AppletSettings(this, metadata.uuid, instanceId);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "showtrack", "showtrack", this.on_settings_changed, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "showalbum", "showalbum", this.on_settings_changed, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "truncatetext", "truncatetext", this.on_settings_changed, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "hideSystray", "hideSystray", function() {
+                if (this.hideSystray) this.registerSystrayIcons();
+                else this.unregisterSystrayIcons();
+            });
+            if (this.hideSystray) this.registerSystrayIcons();
+            ///@koutch Settings 
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-player", "show_player", this._applySettings, null);                            
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player", "show_launch_player", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player-list", "show_launch_player_list", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-app", "show_app", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-list", "show_app_list", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-mutebutton", "show_app_mutebutton", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "show-output-device", "show_output_device", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "volume-max", "volume_max", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "mute-middle-click", "mute_middle_click", this._applySettings, null);
+
+            this.slider_volumeMax = 1;
+            this.stop_scroll = false;/// to make a short pause when volume reach 100% while scrolling the applet
+
+            ///add settings button in context menu 
+            // configuration via context menu is automatically provided in Cinnamon 2.0+
+            let cinnamonVersion = Config.PACKAGE_VERSION.split('.')
+            let majorVersion = parseInt(cinnamonVersion[0])
+
+            // for Cinnamon 1.x, build a menu item
+            if (majorVersion < 2) {
+                this.edit_menu_item = new PopupMenu.PopupImageMenuItem(_('Settings'), "system-run-symbolic");
+                this.edit_menu_item.connect('activate', Lang.bind(this, function () {
+                    Util.spawnCommandLine('cinnamon-settings applets sound-with-apps-volume@koutch');
+                }));
+                this.edit_menu_item.addActor(new St.Button({ label: "   " }));/// to align icon with switch button
+                this._applet_context_menu.addMenuItem(this.edit_menu_item);
+            }
+            ///@koutch Settings 
+
             this.menuManager = new PopupMenu.PopupMenuManager(this);
             this.menu = new Applet.AppletPopupMenu(this, orientation);
             this.menuManager.addMenu(this.menu);
@@ -1070,9 +1108,7 @@ MyApplet.prototype = {
             this._control.connect('stream-added', Lang.bind(this, this._maybeShowInput));
             this._control.connect('stream-removed', Lang.bind(this, this._maybeShowInput));
             this._volumeMax = 1*this._control.get_vol_max_norm(); // previously was 1.5*this._control.get_vol_max_norm();, but we'd need a little mark on the slider to make it obvious to the user we're going over 100%..
-            this.slider_volumeMax = 1;
-            this.stop_scroll = false;/// to make a short pause when volume reach 100% while scrolling the applet
-            
+
             this._output = null;
             this._outputVolumeId = 0;
             this._outputMutedId = 0;
@@ -1082,6 +1118,7 @@ MyApplet.prototype = {
             this._inputMutedId = 0;
 
             this._icon_name = '';
+            this._icon_path = null;
 
             this.actor.connect('scroll-event', Lang.bind(this, this._onScrollEvent));
 
@@ -1094,50 +1131,70 @@ MyApplet.prototype = {
 
             this._control.open();
 
-            ///@koutch Settings 
-            this.settings = new Settings.AppletSettings(this, "sound-with-apps-volume@koutch", instance_id);
-            this.settings.bindProperty(Settings.BindingDirection.IN, "show-player", "show_player", this._applySettings, null);                            
-            this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player", "show_launch_player", this._applySettings, null);
-            this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player-list", "show_launch_player_list", this._applySettings, null);
-            this.settings.bindProperty(Settings.BindingDirection.IN, "show-app", "show_app", this._applySettings, null);
-            this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-list", "show_app_list", this._applySettings, null);
-            this.settings.bindProperty(Settings.BindingDirection.IN, "show-app-mutebutton", "show_app_mutebutton", this._applySettings, null);
-            this.settings.bindProperty(Settings.BindingDirection.IN, "show-output-device", "show_output_device", this._applySettings, null);
-            this.settings.bindProperty(Settings.BindingDirection.IN, "volume-max", "volume_max", this._applySettings, null);
-            this.settings.bindProperty(Settings.BindingDirection.IN, "mute-middle-click", "mute_middle_click", this._applySettings, null);
+            this._volumeControlShown = false;
 
-            ///add settings button in context menu 
-            // configuration via context menu is automatically provided in Cinnamon 2.0+
-            let cinnamonVersion = Config.PACKAGE_VERSION.split('.')
-            let majorVersion = parseInt(cinnamonVersion[0])
+            this._showFixedElements();
 
-            // for Cinnamon 1.x, build a menu item
-            if (majorVersion < 2) {
-                this.edit_menu_item = new PopupMenu.PopupImageMenuItem(_('Settings'), "system-run-symbolic");
-                this.edit_menu_item.connect('activate', Lang.bind(this, function () {
-                    Util.spawnCommandLine('cinnamon-settings applets sound-with-apps-volume@koutch');
-                }));
-                this.edit_menu_item.addActor(new St.Button({ label: "   " }));/// to align icon with switch button
-                this._applet_context_menu.addMenuItem(this.edit_menu_item);
-            }
-
+ 			///@koucth Settings
             this._applySettings();
 
-        }
+       }
         catch (e) {
             global.logError(e);
+       }
+    },
+
+    on_settings_changed : function() {
+        if (!this.showtrack) {
+            this.setAppletText();
+        }
+
+        if (!this.showalbum) {
+            this.setAppletIcon();
+        }
+
+        if (this.showtrack || this.showalbum) {
+            for (owner in this._players) {
+                this._addPlayer(owner);
+            }
         }
     },
-///@koucth
+	///@koutch Settings         
+    _applySettings: function() {
+
+        if (this.volume_max) this.slider_volumeMax = 1.5;
+        else this.slider_volumeMax = 1;
+        
+        this._cleanup();
+        this._volumeControlShown = false;
+        /// add players if any
+        if ( this.show_player && this._nbPlayers()>0 ){
+            for (owner in this._players) {
+                this._addPlayer(owner);
+            }
+        }
+
+        this._showFixedElements();
+        this._readOutput();
+        this.setIconName(this._icon_name);
+        /// refresh the menu if it has been open while applying settings
+        if (this.menu.isOpen){
+            this.menu.toggle();
+            this.on_applet_clicked(null);
+        }
+    },
+	///@koutch          
     on_applet_removed_from_panel : function() {
         
         ///@koucth Settings
         this.settings.finalize();    // This is called when a user removes the applet from the panel.. 
 
-        if (this._iconTimeoutId) 
-            Mainloop.source_remove(this._iconTimeoutId); 
+        if (this.hideSystray) this.unregisterSystrayIcons();
+        if (this._iconTimeoutId) {
+            Mainloop.source_remove(this._iconTimeoutId);
+        }
     },
-///@koucth
+	///@koutch
     on_applet_clicked: function(event) {
         if (!this.menu.isOpen){
             ///@koutch update application list
@@ -1150,6 +1207,7 @@ MyApplet.prototype = {
             if (this.show_app_list && this.show_app)
                 this._selectAppItem.activate();
         }
+
         this.menu.toggle();
     },
 
@@ -1172,7 +1230,7 @@ MyApplet.prototype = {
             this.mute_in_switch.setToggleState(true);
         }
     },
-
+	///@koutch
     _onScrollEvent: function(actor, event) {
         let direction = event.get_scroll_direction();
         let currentVolume = this._output.volume;
@@ -1192,7 +1250,7 @@ MyApplet.prototype = {
         else if (direction == Clutter.ScrollDirection.UP) {
             if (this._output.volume < this._volumeMax){ /// volume < 100%
                 this._output.volume = Math.min(this._volumeMax, currentVolume + this._volumeMax * VOLUME_ADJUSTMENT_STEP);
-                if (this._output.volume >= this._volumeMax) { /// volume == 100%
+               if (this._output.volume >= this._volumeMax) { /// volume == 100%
                     this.stop_scroll = true; /// to make a short pause when volume reach 100%
                     if (this.stop_scrollTimeoutId) {
                         Mainloop.source_remove(this.stop_scrollTimeoutId);
@@ -1202,17 +1260,26 @@ MyApplet.prototype = {
                     }));
                 }       
             }
-            else
+            else 
                 this._output.volume = Math.min(this._volumeMax * this.slider_volumeMax, currentVolume + this._volumeMax * VOLUME_ADJUSTMENT_STEP);
-            this._output.change_is_muted(false);
+
             this._output.push_volume();
+            this._output.change_is_muted(false);
         }
 
         this._notifyVolumeChange();
     },
+    ///@Koutch
+    _onButtonPressEvent: function (actor, event) {
+        ///mute on middle click
+        if (event.get_button() == 2 && this.mute_middle_click) 
+            this._toggle_out_mute();
+            
+        return Applet.Applet.prototype._onButtonPressEvent.call(this, actor, event);
+    },
 
     _onButtonReleaseEvent: function (actor, event) {
-        Applet.IconApplet.prototype._onButtonReleaseEvent.call(this, actor, event);
+        Applet.TextIconApplet.prototype._onButtonReleaseEvent.call(this, actor, event);
 
         if (event.get_button() == 2) {
             if (this._output.is_muted)
@@ -1226,7 +1293,7 @@ MyApplet.prototype = {
 
         return true;
     },
-///@koutch
+
     setIconName: function(icon) {
         this._icon_name = icon;
         this.set_applet_icon_symbolic_name(icon);
@@ -1237,15 +1304,66 @@ MyApplet.prototype = {
             }
             this._iconTimeoutId = Mainloop.timeout_add(3000, Lang.bind(this, function() {
                 this._iconTimeoutId = null;
-                this.set_applet_icon_symbolic_name(this['_output'].is_muted ? 'audio-volume-muted' : 'audio-x-generic');
+                if (this['_output'].is_muted) {
+                    this.set_applet_icon_symbolic_name('audio-volume-muted');
+                } else if (this.showalbum) {
+                    this.setAppletIcon(true, this._icon_path);
+                } else {
+                    this.set_applet_icon_symbolic_name('audio-x-generic');
+                }
             }));
         }
+    },
+	///@koutch
+    setAppletIcon: function(player, path) {
+        if (path) {
+            if (path === true) {
+                // Restore the icon path from the saved path.
+                path = this._icon_path;
+            } else {
+                this._icon_path = path;
+            }
+        } else if (path === null) {
+            // This track has no art, erase the saved path.
+            this._icon_path = null;
+        }
+
+        ///@koutch Settings test show_player settings to display volume icone if player is disable
+		if (this.show_player) {
+			if (this.showalbum) {
+				if (path && player && (player === true || player._playerStatus == 'Playing')) {
+					this.set_applet_icon_path(path);
+				} else {
+					this.setIconName('media-optical-cd-audio');
+				}
+			}
+			else {
+				this.set_applet_icon_symbolic_name('audio-x-generic');
+			}
+		}
+    },
+	///@koutch
+    setAppletText: function(player) {
+        let title_text = "";
+        ///@koutch Settings test show_player settings to display volume icone if player is disable
+        if (this.showtrack && player && player._playerStatus == 'Playing' && this.show_player) {
+            title_text = player._title.getLabel() + ' - ' + player._artist.getLabel();
+            if (this.truncatetext < title_text.length) {
+                title_text = title_text.substr(0, this.truncatetext) + "...";
+            }
+        } 
+        this.set_applet_label(title_text);
+    },
+
+    setAppletTextIcon: function(player, icon) {
+        this.setAppletIcon(player, icon);
+        this.setAppletText(player);
     },
 
     _nbPlayers: function() {
         return Object.keys(this._players).length;
     },
-///@koutch
+	///@koutch
     _addPlayer: function(owner) {
         // ensure menu is empty
         this._cleanup();
@@ -1259,7 +1377,7 @@ MyApplet.prototype = {
         this.setIconName(this._icon_name);
 
         this._readOutput();
-
+ 
         ///@koutch Settings refresh the menu : if player is launch when the menu is open
         /// the menu stay open but don't display as it should
         if (this.menu.isOpen && this.show_player){
@@ -1267,8 +1385,8 @@ MyApplet.prototype = {
             this.on_applet_clicked(null);
         }
 
-    },
-///@koutch
+   },
+	///@koutch
     _removePlayer: function(owner) {
         delete this._players[owner];
         this._cleanup();
@@ -1283,7 +1401,7 @@ MyApplet.prototype = {
         this.setIconName(this._icon_name);
 
         this._readOutput();
-        
+
         ///@koutch Settings refresh the menu : if player is closed by the "Quit Player" button in applet player
         /// the menu stay open but don't display as it should
         if (this.menu.isOpen && this.show_player){
@@ -1298,13 +1416,14 @@ MyApplet.prototype = {
         if (this._outputSlider) this._outputSlider.destroy();
         if (this._inputTitle) this._inputTitle.destroy();
         if (this._inputSlider) this._inputSlider.destroy();
+        this.setAppletTextIcon();
         this.menu.removeAll();
      },
-///@koutch
+	///@koutch
     _showFixedElements: function() {
         if (this._volumeControlShown) return;
         this._volumeControlShown = true;
-        
+
         ///@koutch Settings test show_player settings to add 'Launch player' 
         ///if there is players but settings don't show it 
         ///show_launch_player is tested at the end of this function
@@ -1347,12 +1466,15 @@ MyApplet.prototype = {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._outputTitle = new TextImageMenuItem(_("Volume"), "audio-volume-high", false, "right", "sound-volume-menu-item");
+
+		///@koutch MyPopupSlider
         this._outputSlider = new MyPopupSliderMenuItem(0);
         this._outputSlider.setMaxValue (this.slider_volumeMax);
         this._outputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_output'));
         this._outputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
         if (this.mute_middle_click)
             this._outputSlider.connect('mute', Lang.bind(this, this._toggle_out_mute));
+ 
         this.menu.addMenuItem(this._outputTitle);
         this.menu.addMenuItem(this._outputSlider);
 
@@ -1363,10 +1485,13 @@ MyApplet.prototype = {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._inputTitle = new PopupMenu.PopupMenuItem(_("Microphone"), { reactive: false });
+
+		///@koutch MyPopupSlider
         this._inputSlider = new MyPopupSliderMenuItem(0);
         this._inputSlider.setMaxValue (this.slider_volumeMax);
         this._inputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_input'));
         this._inputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
+
         this.menu.addMenuItem(this._inputTitle);
         this.menu.addMenuItem(this._inputSlider);
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
@@ -1422,10 +1547,10 @@ MyApplet.prototype = {
         this[property].push_volume();
     },
 
-    _notifyVolumeChange: function() {
+    _notifyVolumeChange: function() {        
         Main.soundManager.play('volume');
     },
-
+	///@koutch
     _mutedChanged: function(object, param_spec, property) {
         let muted = this[property].is_muted;
         let slider = this[property+'Slider'];
@@ -1459,7 +1584,7 @@ MyApplet.prototype = {
             }
         }
     },
-
+	///@koutch
     _volumeChanged: function(object, param_spec, property) {
         if (this[property] == null) return;
 
@@ -1512,19 +1637,19 @@ MyApplet.prototype = {
             this._mutedChanged (null, null, '_output');
             this._volumeChanged (null, null, '_output');
             let sinks = this._control.get_sinks();
-            this._selectDeviceItem.menu.removeAll();
-            for (let i = 0; i < sinks.length; i++) {
-                let sink = sinks[i];
-                let menuItem = new PopupMenu.PopupMenuItem(sink.get_description());
-                if (sinks[i].get_id() == this._output.get_id()) {
-                    menuItem.setShowDot(true);
-                }
-                menuItem.connect('activate', Lang.bind(this, function() {
-                    log('Changing default sink to ' + sink.get_description());
-                    this._control.set_default_sink(sink);
-                }));
-                this._selectDeviceItem.menu.addMenuItem(menuItem);
-            }
+	        this._selectDeviceItem.menu.removeAll();
+	        for (let i = 0; i < sinks.length; i++) {
+	        	let sink = sinks[i];
+	        	let menuItem = new PopupMenu.PopupMenuItem(sink.get_description());
+	        	if (sinks[i].get_id() == this._output.get_id()) {
+	        		menuItem.setShowDot(true);
+	        	}
+	        	menuItem.connect('activate', Lang.bind(this, function() {
+	        		log('Changing default sink to ' + sink.get_description());
+	                this._control.set_default_sink(sink);
+	            }));
+	            this._selectDeviceItem.menu.addMenuItem(menuItem);
+	        }
         } else {
             this._outputSlider.setValue(0);
             this.setIconName('audio-volume-muted-symbolic');
@@ -1574,7 +1699,7 @@ MyApplet.prototype = {
             this._inputSlider.actor.hide();
         }
     },
-///@koutch create application list  
+///@koutch create application list
     _appSubMenu: function() {               
         let sink_input_name_length = 20;
         let sink_input_name = "";
@@ -1707,7 +1832,7 @@ MyApplet.prototype = {
             this._selectAppItem.menu.addMenuItem(sink_inputSlider);
         }
     },
-///@koutch Settings         
+    ///@koutch Settings    
     _applySettings: function() {
 
         if (this.volume_max) this.slider_volumeMax = 1.5;
@@ -1730,11 +1855,21 @@ MyApplet.prototype = {
             this.menu.toggle();
             this.on_applet_clicked(null);
         }
+    },
+
+    registerSystrayIcons: function() {
+        for (let i = 0; i < support_seek.length; i++) {
+            Main.systrayManager.registerRole(support_seek[i], this.metadata.uuid);
+        }
+    },
+
+    unregisterSystrayIcons: function() {
+        Main.systrayManager.unregisterId(this.metadata.uuid);
     }
 
 };
 
-function main(metadata, orientation, panel_height, instance_id) {
-    let myApplet = new MyApplet(orientation, panel_height, instance_id);
+function main(metadata, orientation, panel_height, instanceId) {
+    let myApplet = new MyApplet(metadata, orientation, panel_height, instanceId);
     return myApplet;
 }
