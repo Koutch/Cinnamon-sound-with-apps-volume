@@ -1,1 +1,3 @@
 Sound applet with settings, applications' volume, volume 150%, mute ...
+
+For earlier version than Cinnamon 2.4 see [previous versions](https://github.com/Koutch/Cinnamon-sound-with-apps-volume/releases)
