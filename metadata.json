@@ -1,7 +1,7 @@
 {
     "uuid": "sound-with-apps-volume@koutch", 
     "name": "Sound with apps volume", 
-    "version": "1.2.3", 
+    "version": "1.3", 
     "icon": "stock_volume", 
-    "description": "Sound applet with settings, applications' volume, volume 150%, mute button ... for Cinnamon 2.2.x"
+    "description": "Sound applet with settings, applications' volume, volume 150%, mute button ... "
 }
