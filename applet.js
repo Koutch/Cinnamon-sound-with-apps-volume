@@ -1832,30 +1832,6 @@ MyApplet.prototype = {
             this._selectAppItem.menu.addMenuItem(sink_inputSlider);
         }
     },
-    ///@koutch Settings    
-    _applySettings: function() {
-
-        if (this.volume_max) this.slider_volumeMax = 1.5;
-        else this.slider_volumeMax = 1;
-        
-        this._cleanup();
-        this._volumeControlShown = false;
-        /// add players if any
-        if ( this.show_player && this._nbPlayers()>0 ){
-            for (owner in this._players) {
-                this._addPlayer(owner);
-            }
-        }
-
-        this._showFixedElements();
-        this._readOutput();
-        this.setIconName(this._icon_name);
-        /// refresh the menu if it has been open while applying settings
-        if (this.menu.isOpen){
-            this.menu.toggle();
-            this.on_applet_clicked(null);
-        }
-    },
 
     registerSystrayIcons: function() {
         for (let i = 0; i < support_seek.length; i++) {
