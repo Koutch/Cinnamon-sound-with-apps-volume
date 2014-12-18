@@ -859,7 +859,17 @@ Player.prototype = {
                 else {
                     let l = new Clutter.BinLayout();
                     let b = new Clutter.Box();
-                    let c = new Clutter.Texture({height: 210 * global.ui_scale, keep_aspect_ratio: true, filter_quality: 2, filename: cover_path});
+                    ///@koutch fix issue if cover isn't a squarish image
+                    ///replace height by width : it don't works with height but it does with width ??
+//                    let c = new Clutter.Texture({height: 210 * global.ui_scale, keep_aspect_ratio: true, filter_quality: 2, filename: cover_path});
+                    let c = new Clutter.Texture({width: 210 * global.ui_scale, keep_aspect_ratio: true, filter_quality: 2, filename: cover_path});
+                    ///@Koutch prevent too high cover for portait cover
+                    if (c.get_height() > c.get_width()) {
+                        let requested_size = 210 * global.ui_scale;
+                        ///@koutch reduce width depending height to keep aspect ratio
+                        c.set_width(requested_size * (requested_size/c.get_height()));
+                        c.set_height(requested_size);
+                    }
                     b.set_layout_manager(l);
                     b.set_width(230 * global.ui_scale);
                     b.add_actor(c);
