@@ -201,8 +201,11 @@ MyPopupSliderMenuItem.prototype = {
 			newvalue = 0;
 		else if (relX > width - handleRadius)
 			newvalue = this.maxValue;
-		else
-			newvalue = (relX - handleRadius) / (width - 2 * handleRadius) * this.maxValue;
+		else{
+			///@koutch to fix right margin        
+//                        newvalue = (relX - handleRadius) / (width - 2 * handleRadius) * this.maxValue;
+                        newvalue = (relX - handleRadius) / (width - this._width_multiplier * handleRadius) * this.maxValue;
+		}
 		
 		if (this.oldValue < newvalue) {
 			if (newvalue > 1  && newvalue < 1.17) {
