@@ -27,7 +27,9 @@ function MyPopupSliderMenuItem() {
 
 MyPopupSliderMenuItem.prototype = {
 	__proto__: PopupMenu.PopupSliderMenuItem.prototype,
-	_init: function(value) {
+	_init: function(value, width_multiplier) {
+    ///@koutch width_multiplier is to fix right margin too short in PopupSubMenuMenuItem
+    ///
 		this.maxValue = 1;
 		
 		PopupMenu.PopupBaseMenuItem.prototype._init.call(this, { activate: false });
@@ -38,6 +40,7 @@ MyPopupSliderMenuItem.prototype = {
 			// Avoid spreading NaNs around
 			throw TypeError('The slider value must be a number');
 		this._value = Math.max(Math.min(value, this.maxValue), 0);
+		this._width_multiplier = width_multiplier;///@koutch to fix right margin
 
 		this._slider = new St.DrawingArea({ style_class: 'popup-slider-menu-item', reactive: true });
 		this.addActor(this._slider, { span: -1, expand: true });
@@ -70,8 +73,10 @@ MyPopupSliderMenuItem.prototype = {
 		let [width, height] = area.get_surface_size();
 
 		let handleRadius = themeNode.get_length('-slider-handle-radius');
+        ///@koutch to fix right margin
+//		let sliderWidth = width - 2 * handleRadius;
+		let sliderWidth = width - this._width_multiplier * handleRadius;
 
-		let sliderWidth = width - 2 * handleRadius;
 		let sliderHeight = themeNode.get_length('-slider-height');
 
 		let sliderBorderWidth = themeNode.get_length('-slider-border-width');
@@ -122,8 +127,9 @@ MyPopupSliderMenuItem.prototype = {
 				color = sliderColor;
 			else
 				color = sliderActiveColor;
-				
-			handleX = handleRadius + (width - 2 * handleRadius) * 1/ this.maxValue;  
+            ///@koutch to fix right margin			
+//			handleX = handleRadius + (width - 2 * handleRadius) * 1/ this.maxValue;  
+			handleX = handleRadius + (width - this._width_multiplier * handleRadius) * 1/ this.maxValue;  
 			
 			cr.setSourceRGBA (
 				color.red / 255,
@@ -136,9 +142,10 @@ MyPopupSliderMenuItem.prototype = {
 			cr.arc(handleX, (handleY + sliderHeight), handleRadius/4 , 0, 2 * Math.PI);
 			cr.fill();
 		}
-
-
-		handleX = handleRadius + (width - 2 * handleRadius) * this._value / this.maxValue;
+		
+        ///@koutch to fix right margin
+//		handleX = handleRadius + (width - 2 * handleRadius) * this._value / this.maxValue;
+		handleX = handleRadius + (width - this._width_multiplier * handleRadius) * this._value / this.maxValue;
 
 		color = themeNode.get_foreground_color();
 		cr.setSourceRGBA (
@@ -1440,7 +1447,7 @@ MyApplet.prototype = {
 
 		///@koutch MyPopupSlider
 //        this._outputSlider = new PopupMenu.PopupSliderMenuItem(0);
-        this._outputSlider = new MyPopupSliderMenuItem(0);
+        this._outputSlider = new MyPopupSliderMenuItem(0, 2); ///@koutch : 2 is width_multiplier
         this._outputSlider.setMaxValue (this.slider_volumeMax);
         this._outputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_output'));
         this._outputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
@@ -1461,7 +1468,7 @@ MyApplet.prototype = {
 
 		///@koutch MyPopupSlider
 //        this._inputSlider = new PopupMenu.PopupSliderMenuItem(0);
-        this._inputSlider = new MyPopupSliderMenuItem(0);
+        this._inputSlider = new MyPopupSliderMenuItem(0, 2);///@koutch : 2 is width_multiplier
         this._inputSlider.setMaxValue (this.slider_volumeMax);
         this._inputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_input'));
         this._inputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
@@ -1744,7 +1751,7 @@ MyApplet.prototype = {
                 menuItem.addActor(menuItem._muteButton);
             }
 
-            let sink_inputSlider = new MyPopupSliderMenuItem(sink_input.volume / this._volumeMax);
+            let sink_inputSlider = new MyPopupSliderMenuItem(sink_input.volume / this._volumeMax, 5);///@koutch : 5 is width_multiplier
             sink_inputSlider.setMaxValue (this.slider_volumeMax);
             sink_inputSlider.setValue (sink_input.volume / this._volumeMax);
             sink_inputSlider.connect('value-changed', Lang.bind(this, function(slider, value ) {            
