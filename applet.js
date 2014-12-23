@@ -1885,11 +1885,10 @@ MyApplet.prototype = {
             return;
 
         for (let i = 0; i < sink_inputs.length; i++) {
-            this._selectAppItem.actor.show();
-
             let sink_input = sink_inputs[i];
+            if (sink_input.get_name() == null) continue; /// fix a bug with  "LADSPA Plugin Multiband EQ" & "PulseAudio Equalizer" who create an unnamed input report by @werewolfy
 
-            if (sink_input.get_name() == null) continue; /// fix abug with  "LADSPA Plugin Multiband EQ" & "PulseAudio Equalizer" who create an unnamed input report by @werewolfy
+            this._selectAppItem.actor.show();
 
             if( sink_input.get_name().length < sink_input_name_length )     {
                 sink_input_name = sink_input.get_name();
