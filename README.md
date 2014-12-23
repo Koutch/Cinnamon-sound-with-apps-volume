@@ -8,10 +8,10 @@ This is a fork of the original Cinnamon sound applet. I add :
 - Settings menu via Cinnamon's applets menu or right click on the applet 
 
 
- _Changelog 1.3 (2014.12.23)_ :
+ _[Changelog 1.3 (2014.12.23)](http://cinnamon-spices.linuxmint.com/applets/view/150)_ :
  
 	- add the new features of the orginal Cinnamon 2.4 sound applet
-	- add a custoù launcher
+	- add a custom launcher
 	- sliders improvements :
 	 - add an option to override theme (to correct right margin and keep mark at 100% for 150% slider)
 	 - for 150% slider, make 100% a bit "magnetic" ^^ :
