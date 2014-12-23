@@ -1,4 +1,4 @@
-Sound applet with settings, applications' volume, volume 150%, mute button, scrolling track time, custom launcher ...
+[Sound applet](https://cloud.githubusercontent.com/assets/5185939/5533812/b1f69f42-8a50-11e4-9f57-05fda23effda.png) with settings, applications' volume, volume 150%, mute button, scrolling track time, custom launcher ...
 
 For earlier version than Cinnamon 2.4 see [previous versions](https://github.com/Koutch/Cinnamon-sound-with-apps-volume/releases)
 
@@ -11,6 +11,7 @@ This is a fork of the original Cinnamon sound applet. I add :
  _Changelog 1.3 (2014.12.23)_ :
  
 	- add the new features of the orginal Cinnamon 2.4 sound applet
+	- add a custoù launcher
 	- sliders improvements :
 	 - add an option to override theme (to correct right margin and keep mark at 100% for 150% slider)
 	 - for 150% slider, make 100% a bit "magnetic" ^^ :
