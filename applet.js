@@ -185,12 +185,12 @@ MyPopupSliderMenuItem.prototype = {
         let direction = event.get_scroll_direction();
 
         if (this.on_pause) return; /// to make a short pause when volume reach 100%
-        if (this.parent == 'player' ) this.emit('drag-begin'); /// to disable _updateTimer: function on scroll
 
         if (direction == Clutter.ScrollDirection.DOWN) {
-            if (this.parent == 'player' )
+            if (this.parent == 'player' ) {
+				this.emit('drag-begin'); /// to disable _updateTimer: function on scroll
                 this._value = Math.max(0, this._value - this.SLIDER_VERTICAL_SCROLL_STEP);
-
+            }
             else if (this._value > 1){
                 this._value = Math.max(1, this._value - this.SLIDER_VERTICAL_SCROLL_STEP);
                 if (this._value < 1.01){///volume < 101%
@@ -202,9 +202,10 @@ MyPopupSliderMenuItem.prototype = {
                 this._value = Math.max(0, this._value - this.SLIDER_VERTICAL_SCROLL_STEP);
         }
         else if (direction == Clutter.ScrollDirection.UP) {
-            if (this.parent == 'player' )
+            if (this.parent == 'player' ) {
+				this.emit('drag-begin'); /// to disable _updateTimer: function on scroll
                 this._value = Math.min(1, this._value + this.SLIDER_VERTICAL_SCROLL_STEP);
-
+            }
             else if (this._value < 0.99999){ /// volume < 100% (0,99999 to fix a bug with output volume ??)
                 this._value = Math.min(1, this._value + this.SLIDER_VERTICAL_SCROLL_STEP);
                 if (this._value >= 0.99999) { ///volume == 100%
