@@ -9,6 +9,18 @@
     "description": "Show Player",
     "tooltip": "Show/hide Player "
  },
+ "album-art-size": {
+   "type": "spinbutton",
+   "default": 210,
+   "min": 0,
+   "max": 210,
+   "units": "px",
+   "step": 10,
+   "description": "Album art size",
+   "dependency": "show-player",
+   "indent": true,
+   "tooltip": "from 0 to 210 (0 to disable)"
+ },
  "showtrack": {
    "type": "checkbox",
    "default": false,
