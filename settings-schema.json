@@ -81,14 +81,18 @@
     "description": "Mute button",
     "tooltip": "enable/disable mute button"
  },
-  "div3" : {
-    "type" : "separator"
- },
  "show-output-device" : {
     "type" : "checkbox",
     "default" : true,
     "description": "Show Output device",
     "tooltip": "show/hide Output device"
+ },
+  "div3" : {
+    "type" : "separator"
+ },
+ "head2" : {
+    "type" : "header",
+    "description" : "Sliders settings"
  },
  "volume-max" : {
     "type" : "checkbox",
@@ -105,6 +109,66 @@
     "default" : false,
     "description": "Override the slider's theme",
     "tooltip": "Keep mark on the 150% slider & may fix right margin too short"
+ },
+ "volume-vertical-step": {
+   "type": "spinbutton",
+   "default": 5,
+   "min": 0,
+   "max": 100,
+   "units": "%",
+   "step": 1,
+   "description": "Volume up/down scroll step : ",
+   "tooltip": "from 0 to 100 (0 to disable)"
+ },
+ "volume-horizontal-step": {
+   "type": "spinbutton",
+   "default": 1,
+   "min": 0,
+   "max": 100,
+   "units": "%",
+   "step": 1,
+   "description": "Volume left/right scroll step : ",
+   "tooltip": "from 0 to 100 (0 to disable)"
+ },
+ "volume-arrow-step": {
+   "type": "spinbutton",
+   "default": 10,
+   "min": 0,
+   "max": 100,
+   "units": "%",
+   "step": 1,
+   "description": "Volume arrow key step : ",
+   "tooltip": "from 0 to 100 (0 to disable)"
+ },
+ "time-vertical-step": {
+   "type": "spinbutton",
+   "default": 1,
+   "min": 0,
+   "max": 3600,
+   "units": "sec",
+   "step": 1,
+   "description": "Time up/down scroll step : ",
+   "tooltip": "from 0 to 3600 (0 to disable)"
+ },
+ "time-horizontal-step": {
+   "type": "spinbutton",
+   "default": 5,
+   "min": 0,
+   "max": 3600,
+   "units": "sec",
+   "step": 1,
+   "description": "Time left/right scroll step : ",
+   "tooltip": "from 0 to 3600 (0 to disable)"
+ },
+ "time-arrow-step": {
+   "type": "spinbutton",
+   "default": 10,
+   "min": 0,
+   "max": 3600,
+   "units": "sec",
+   "step": 1,
+   "description": "Volume arrow key step : ",
+   "tooltip": "from 0 to 3600 (0 to disable)"
  },
  "div4" : {
     "type" : "separator"
