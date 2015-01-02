@@ -10,6 +10,7 @@ This is a fork of the original Cinnamon sound applet. I add :
  _Changelog 1.3.1 (2015.01.02)_ :
  
 	- add the scroll/arrow key  step configurable for volume and track time
+	- add album art size configurable
 
  _[Changelog 1.3 (2014.12.23)](http://cinnamon-spices.linuxmint.com/applets/view/150)_ :
  
