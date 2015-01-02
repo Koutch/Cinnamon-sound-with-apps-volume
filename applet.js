@@ -510,7 +510,7 @@ function Player() {
 Player.prototype = {
     __proto__: PopupMenu.PopupMenuSection.prototype,
 
-    _init: function(system_status_button, busname, owner, themeOption, verticalStep, horizontalStep, arrowStep) {
+    _init: function(system_status_button, busname, owner, albumArtSize, themeOption, verticalStep, horizontalStep, arrowStep) {
         PopupMenu.PopupMenuSection.prototype._init.call(this);
         this.showPosition = true; // @todo: Get from settings
         this._owner = owner;
@@ -523,6 +523,7 @@ Player.prototype = {
         this.time_vertical_step = verticalStep;
         this.time_horizontal_step = horizontalStep;
         this.time_arrow_step = arrowStep;
+        this.album_art_size = albumArtSize;
 
         Interfaces.getDBusProxyWithOwnerAsync(MEDIA_PLAYER_2_NAME,
                                               this._busName,
@@ -567,7 +568,8 @@ Player.prototype = {
         this.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._trackCoverFile = this._trackCoverFileTmp = false;
         this._trackCover = new St.Bin({style_class: 'sound-track-cover', x_align: St.Align.START});
-        this._trackCover.set_child(new St.Icon({icon_name: "media-optical-cd-audio", icon_size: 220, icon_type: St.IconType.FULLCOLOR}));
+        ///@koutch make album art size configurable
+        if (this.album_art_size > 0) this._trackCover.set_child(new St.Icon({icon_name: "media-optical-cd-audio", icon_size: this.album_art_size, icon_type: St.IconType.FULLCOLOR}));
         this._trackInfosTop = new St.Bin({style_class: 'sound-track-infos', x_align: St.Align.START});
         this._trackInfosBottom = new St.Bin({style_class: 'sound-track-infos', x_align: St.Align.START});
         this._trackControls = new St.Bin({style_class: 'sound-playback-control', x_align: St.Align.MIDDLE});
@@ -991,27 +993,29 @@ Player.prototype = {
             time: 0.3,
             transition: 'easeOutCubic',
             onComplete: Lang.bind(this, function() {*/
+            ///@koutch this.album_art_size is to make album art size configurable
                 if (! cover_path || ! GLib.file_test(cover_path, GLib.FileTest.EXISTS)) {
-                    this._trackCover.set_child(new St.Icon({icon_name: "media-optical-cd-audio", icon_size: 210, icon_type: St.IconType.FULLCOLOR}));
+                    if (this.album_art_size > 0) this._trackCover.set_child(new St.Icon({icon_name: "media-optical-cd-audio", icon_size: this.album_art_size, icon_type: St.IconType.FULLCOLOR}));
                     cover_path = null;
                 }
-                else {
+                else if (this.album_art_size > 0) {
                     let l = new Clutter.BinLayout();
                     let b = new Clutter.Box();
                     ///@koutch fix issue if cover isn't a squarish image
                     ///        replace height by width : it don't works with height but it does with width ??
 //                    let c = new Clutter.Texture({height: 210 * global.ui_scale, keep_aspect_ratio: true, filter_quality: 2, filename: cover_path});
-                    let c = new Clutter.Texture({width: 210 * global.ui_scale, keep_aspect_ratio: true, filter_quality: 2, filename: cover_path});
+
+                    let c = new Clutter.Texture({width: this.album_art_size * global.ui_scale, keep_aspect_ratio: true, filter_quality: 2, filename: cover_path});
                     ///@Koutch prevent too high cover for portait cover
                     if (c.get_height() > c.get_width()) {
-                        let requested_size = 210 * global.ui_scale;
-                        ///@koutch reduce width depending height to keep aspect ratio
+                        let requested_size = this.album_art_size * global.ui_scale;
+                       ///@koutch reduce width depending height to keep aspect ratio
                         c.set_width(requested_size * (requested_size/c.get_height()));
                         c.set_height(requested_size);
                     }
 
                     b.set_layout_manager(l);
-                    b.set_width(230 * global.ui_scale);
+                    b.set_width(this.album_art_size * global.ui_scale);
                     b.add_actor(c);
                     this._trackCover.set_child(b);
                 }
@@ -1094,6 +1098,7 @@ MyApplet.prototype = {
             if (this.hideSystray) this.registerSystrayIcons();
             ///@koutch Settings
             this.settings.bindProperty(Settings.BindingDirection.IN, "show-player", "show_player", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "album-art-size", "album_art_size", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player", "show_launch_player", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "show-launch-player-list", "show_launch_player_list", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "show-app", "show_app", this._applySettings, null);
@@ -1511,7 +1516,7 @@ MyApplet.prototype = {
             this._removeOtherPlayers(busName);
             this._cleanup()
             this._volumeControlShown = false;
-            this._players[owner] = new Player(this, busName, owner, this.themeOption, this.time_vertical_step, this.time_horizontal_step, this.time_arrow_step);
+            this._players[owner] = new Player(this, busName, owner, this.album_art_size, this.themeOption, this.time_vertical_step, this.time_horizontal_step, this.time_arrow_step);
             this.menu.addMenuItem(this._players[owner]);
             this.menu.emit('players-loaded', true);
             this._showFixedElements();
