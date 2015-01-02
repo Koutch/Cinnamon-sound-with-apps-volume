@@ -27,7 +27,7 @@ function MyPopupSliderMenuItem() {
 
 MyPopupSliderMenuItem.prototype = {
     __proto__: PopupMenu.PopupSliderMenuItem.prototype,
-    _init: function(value, parent, themeOption) {
+    _init: function(value, parent, themeOption, verticalStep, horizontalStep, arrowStep) {
     ///@koutch in_subMenu and themeOption are to fix right margin too short in PopupSubMenuMenuItem
     ///        seems to work with most of tested themes, there is a stylesheet.css if needed
         this.maxValue = 1;
@@ -54,10 +54,11 @@ MyPopupSliderMenuItem.prototype = {
 
         this.playerSongLength = 0;
 
+        this.verticalScrollStep = verticalStep;
+        this.horizontalScrollStep = horizontalStep;
+        this.arrowKeyStep = arrowStep;
 
-        this.SLIDER_VERTICAL_SCROLL_STEP = 0.05; /// scroll up & down
-        if (this.parent == 'player') this.SLIDER_VERTICAL_SCROLL_STEP = 0.01; ///to scroll track with mouse wheel with a short interval
-        this.SLIDER_HORIZONTAL_SCROLL_STEP = 0.01; /// scroll left & right
+        this.SLIDER_STEP = 0.01;
 
         this._width_multiplier = 2;
         if (this.parent == 'input') this._width_multiplier = 5;/// to fix right margin
@@ -66,8 +67,8 @@ MyPopupSliderMenuItem.prototype = {
 
     setMaxValue: function(value) {
         if (this.parent == 'player')  /// value is SongLength from player
-            if(value > 0) this.SLIDER_VERTICAL_SCROLL_STEP = (1 / value);///to define scroll step to 1 secs
-            else this.SLIDER_VERTICAL_SCROLL_STEP = 0;/// SongLength == 0 (e.g. radio streaming)
+            if(value > 0) this.SLIDER_STEP = (1 / value);///to define scroll step to 1 secs
+            else this.SLIDER_STEP = 0;/// SongLength == 0 (e.g. radio streaming)
         else if (this.parent != 'player')
             this.maxValue = value;
     },
@@ -183,57 +184,72 @@ MyPopupSliderMenuItem.prototype = {
 
     _onScrollEvent: function (actor, event) {
         let direction = event.get_scroll_direction();
+        let sliderChange = false;
 
         if (this.on_pause) return; /// to make a short pause when volume reach 100%
+        if (this.SLIDER_STEP == 0) return; ///SongLength == 0 (e.g. radio streaming)
 
-        if (direction == Clutter.ScrollDirection.DOWN) {
+
+        if (direction == Clutter.ScrollDirection.DOWN && this.verticalScrollStep > 0) {
+            sliderChange = true;
             if (this.parent == 'player' ) {
-				this.emit('drag-begin'); /// to disable _updateTimer: function on scroll
-                this._value = Math.max(0, this._value - this.SLIDER_VERTICAL_SCROLL_STEP);
+                this.emit('drag-begin'); /// to disable _updateTimer: function on scroll
+                this._value = Math.max(0, this._value - (this.SLIDER_STEP * this.verticalScrollStep));
             }
             else if (this._value > 1){
-                this._value = Math.max(1, this._value - this.SLIDER_VERTICAL_SCROLL_STEP);
+                this._value = Math.max(1, this._value - (this.SLIDER_STEP * this.verticalScrollStep));
                 if (this._value < 1.01){///volume < 101%
                     this._value = 1;
                     this._pause(750);
                 }
             }
             else
-                this._value = Math.max(0, this._value - this.SLIDER_VERTICAL_SCROLL_STEP);
+                this._value = Math.max(0, this._value - (this.SLIDER_STEP * this.verticalScrollStep));
         }
-        else if (direction == Clutter.ScrollDirection.UP) {
-            if (this.parent == 'player' ) {
-				this.emit('drag-begin'); /// to disable _updateTimer: function on scroll
-                this._value = Math.min(1, this._value + this.SLIDER_VERTICAL_SCROLL_STEP);
+        else if (direction == Clutter.ScrollDirection.UP && this.verticalScrollStep > 0) {
+            sliderChange = true;
+            if (this.parent == 'player' ){
+                this.emit('drag-begin'); /// to disable _updateTimer: function on scroll
+                this._value = Math.min(1, this._value + (this.SLIDER_STEP * this.verticalScrollStep));
             }
             else if (this._value < 0.99999){ /// volume < 100% (0,99999 to fix a bug with output volume ??)
-                this._value = Math.min(1, this._value + this.SLIDER_VERTICAL_SCROLL_STEP);
+                this._value = Math.min(1, this._value + (this.SLIDER_STEP * this.verticalScrollStep));
                 if (this._value >= 0.99999) { ///volume == 100%
                     this._value = 1;
                     this._pause(750);
                 }
             }
             else
-                this._value = Math.min(this.maxValue, this._value + this.SLIDER_VERTICAL_SCROLL_STEP);
+                this._value = Math.min(this.maxValue, this._value + (this.SLIDER_STEP * this.verticalScrollStep));
         }
-        else if (direction == Clutter.ScrollDirection.LEFT) {
-            if (this.parent == 'player' ) return;
-            if (this._value > 1)
-                this._value = Math.max(1, this._value - this.SLIDER_HORIZONTAL_SCROLL_STEP);
+        else if (direction == Clutter.ScrollDirection.LEFT && this.horizontalScrollStep > 0) {
+            sliderChange = true;
+            if (this.parent == 'player' ) {
+                this.emit('drag-begin'); /// to disable _updateTimer: function on scroll
+                this._value = Math.max(0, this._value - (this.SLIDER_STEP * this.horizontalScrollStep));
+            }
+            else if (this._value > 1)
+                this._value = Math.max(1, this._value - (this.SLIDER_STEP * this.horizontalScrollStep));
             else
-                this._value = Math.max(0, this._value - this.SLIDER_HORIZONTAL_SCROLL_STEP);
+                this._value = Math.max(0, this._value - (this.SLIDER_STEP * this.horizontalScrollStep));
         }
-        else if (direction == Clutter.ScrollDirection.RIGHT) {
-            if (this.parent == 'player' ) return;
-            if (this._value < 0.99999)
-                this._value = Math.min(1, this._value + this.SLIDER_HORIZONTAL_SCROLL_STEP);
+        else if (direction == Clutter.ScrollDirection.RIGHT && this.horizontalScrollStep > 0) {
+            sliderChange = true;
+            if (this.parent == 'player' ) {
+                this.emit('drag-begin'); /// to disable _updateTimer: function on scroll
+                this._value = Math.min(1, this._value + (this.SLIDER_STEP * this.horizontalScrollStep));
+            }
+            else if (this._value < 0.99999)
+                this._value = Math.min(1, this._value + (this.SLIDER_STEP * this.horizontalScrollStep));
             else
-                this._value = Math.min(this.maxValue, this._value + this.SLIDER_HORIZONTAL_SCROLL_STEP);
+                this._value = Math.min(this.maxValue, this._value + (this.SLIDER_STEP * this.horizontalScrollStep));
         }
 
-        this._slider.queue_repaint();
-        this.emit('value-changed', this._value);
-        if (this.parent == 'player' ) this.emit('drag-end'); /// to allow scroll track
+        if (sliderChange ) {
+            this._slider.queue_repaint();
+            this.emit('value-changed', this._value);
+            if (this.parent == 'player' ) this.emit('drag-end'); /// to allow scroll track
+        }
     },
 
     _moveHandle: function(absX, absY) {
@@ -279,10 +295,10 @@ MyPopupSliderMenuItem.prototype = {
         }
 
         if (this.parent == 'player') {
-            if (this.SLIDER_VERTICAL_SCROLL_STEP == 0) /// SongLength == 0 keep slider at 0
+            if (this.SLIDER_STEP == 0) /// SongLength == 0 keep slider at 0
                 newvalue = 0;
             else if (newvalue >= 1)
-                newvalue = newvalue - this.SLIDER_VERTICAL_SCROLL_STEP; /// 1 sec before the end of the track
+                newvalue = newvalue - this.SLIDER_STEP; /// 1 sec before the end of the track
         }
 
         this._value = newvalue;
@@ -293,19 +309,18 @@ MyPopupSliderMenuItem.prototype = {
     _onKeyPressEvent: function (actor, event) {
         /// to make a short pause when volume reach 100%
         if (this.on_pause) return true; /// return true or else, for silder in submenu, Clutter.KEY_Left close the submenu
+        if (this.SLIDER_STEP == 0 ) return true; ///SongLength == 0 (e.g. radio streaming)
 
         let key = event.get_key_symbol();
-        if (key == Clutter.KEY_Right || key == Clutter.KEY_Left) {
+        if ((key == Clutter.KEY_Right || key == Clutter.KEY_Left) && this.arrowKeyStep > 0) {
             let delta = 0;
-            if (this.parent != 'player' )
-                delta = key == Clutter.KEY_Right ? 0.1 : -0.1;
-            else /// make a 10 secs step for player
-                delta = key == Clutter.KEY_Right ? (10 * this.SLIDER_VERTICAL_SCROLL_STEP) : -(10 * this.SLIDER_VERTICAL_SCROLL_STEP);
+
+            delta = key == Clutter.KEY_Right ? (this.arrowKeyStep * this.SLIDER_STEP) : -(this.arrowKeyStep * this.SLIDER_STEP);
 
             let newvalue = Math.max(0, Math.min(this._value + delta, this.maxValue));
 
             if (this.parent == 'player' && newvalue >= 1)
-                newvalue = newvalue - this.SLIDER_VERTICAL_SCROLL_STEP; /// 1 sec before the end of the track
+                newvalue = newvalue - this.SLIDER_STEP; /// 1 sec before the end of the track
 
             if (this.parent != 'player' && this.maxValue > 1){
                 if ((key == Clutter.KEY_Right && this._value < 1 && newvalue >= 1) || (key == Clutter.KEY_Left && this._value > 1  && newvalue <= 1 )){
@@ -495,7 +510,7 @@ function Player() {
 Player.prototype = {
     __proto__: PopupMenu.PopupMenuSection.prototype,
 
-    _init: function(system_status_button, busname, owner, themeOption) {
+    _init: function(system_status_button, busname, owner, themeOption, verticalStep, horizontalStep, arrowStep) {
         PopupMenu.PopupMenuSection.prototype._init.call(this);
         this.showPosition = true; // @todo: Get from settings
         this._owner = owner;
@@ -505,6 +520,9 @@ Player.prototype = {
 
         ///@koutch
         this.themeOption = themeOption;
+        this.time_vertical_step = verticalStep;
+        this.time_horizontal_step = horizontalStep;
+        this.time_arrow_step = arrowStep;
 
         Interfaces.getDBusProxyWithOwnerAsync(MEDIA_PLAYER_2_NAME,
                                               this._busName,
@@ -601,7 +619,7 @@ Player.prototype = {
         this.seekControls.add_actor(this._time.getActor());
 
         ///@koutch  use MyPopupSliderMenuItem
-        this._positionSlider = new MyPopupSliderMenuItem(0,'player', this.themeOption);
+        this._positionSlider = new MyPopupSliderMenuItem(0,'player', this.themeOption, this.time_vertical_step, this.time_horizontal_step, this.time_arrow_step);
         this._positionSlider.connect('value-changed', Lang.bind(this, function(item) {
             let time = item._value * this._songLength;
             this._time.setLabel(this._formatTime(time) + " / " + this._formatTime(this._songLength));
@@ -1085,6 +1103,12 @@ MyApplet.prototype = {
             this.settings.bindProperty(Settings.BindingDirection.IN, "volume-max", "volume_max", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "mute-middle-click", "mute_middle_click", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "theme-option", "theme_option", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "volume-vertical-step", "volume_vertical_step", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "volume-horizontal-step", "volume_horizontal_step", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "volume-arrow-step", "volume_arrow_step", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "time-vertical-step", "time_vertical_step", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "time-horizontal-step", "time_horizontal_step", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "time-arrow-step", "time_arrow_step", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "show-custom-launcher", "show_custom_launcher", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "launch-icon", "launch_icon_name", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "launch-name", "launch_name", this._applySettings, null);
@@ -1487,7 +1511,7 @@ MyApplet.prototype = {
             this._removeOtherPlayers(busName);
             this._cleanup()
             this._volumeControlShown = false;
-            this._players[owner] = new Player(this, busName, owner, this.themeOption);
+            this._players[owner] = new Player(this, busName, owner, this.themeOption, this.time_vertical_step, this.time_horizontal_step, this.time_arrow_step);
             this.menu.addMenuItem(this._players[owner]);
             this.menu.emit('players-loaded', true);
             this._showFixedElements();
@@ -1599,7 +1623,7 @@ MyApplet.prototype = {
 
         ///@koutch MyPopupSlider
 //        this._outputSlider = new PopupMenu.PopupSliderMenuItem(0);
-        this._outputSlider = new MyPopupSliderMenuItem(0, 'volume', this.themeOption);
+        this._outputSlider = new MyPopupSliderMenuItem(0, 'volume', this.themeOption, this.volume_vertical_step, this.volume_horizontal_step, this.volume_arrow_step);
         this._outputSlider.setMaxValue (this.slider_volumeMax);
         this._outputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_output'));
         this._outputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
@@ -1620,7 +1644,7 @@ MyApplet.prototype = {
 
         ///@koutch MyPopupSlider
 //        this._inputSlider = new PopupMenu.PopupSliderMenuItem(0);
-        this._inputSlider = new MyPopupSliderMenuItem(0, 'volume', this.themeOption);
+        this._inputSlider = new MyPopupSliderMenuItem(0, 'volume', this.themeOption, this.volume_vertical_step, this.volume_horizontal_step, this.volume_arrow_step);
         this._inputSlider.setMaxValue (this.slider_volumeMax);
         this._inputSlider.connect('value-changed', Lang.bind(this, this._sliderChanged, '_input'));
         this._inputSlider.connect('drag-end', Lang.bind(this, this._notifyVolumeChange));
@@ -1947,7 +1971,7 @@ MyApplet.prototype = {
                 menuItem.addActor(menuItem._muteButton);
             }
 
-            let sink_inputSlider = new MyPopupSliderMenuItem(sink_input.volume / this._volumeMax, 'input', this.themeOption);
+            let sink_inputSlider = new MyPopupSliderMenuItem(sink_input.volume / this._volumeMax, 'input', this.themeOption, this.volume_vertical_step, this.volume_horizontal_step, this.volume_arrow_step);
             sink_inputSlider.setMaxValue (this.slider_volumeMax);
             sink_inputSlider.setValue (sink_input.volume / this._volumeMax);
             sink_inputSlider.connect('value-changed', Lang.bind(this, function(slider, value ) {
