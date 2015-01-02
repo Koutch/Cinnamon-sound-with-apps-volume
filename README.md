@@ -7,6 +7,9 @@ This is a fork of the original Cinnamon sound applet. I add :
 - Mute with middle click on slider and applications mute button
 - Settings menu via Cinnamon's applets menu or right click on the applet 
 
+ _Changelog 1.3.1 (2015.01.02)_ :
+ 
+	- add the scroll/arrow key  step configurable for volume and track time
 
  _[Changelog 1.3 (2014.12.23)](http://cinnamon-spices.linuxmint.com/applets/view/150)_ :
  
