@@ -1,4 +1,4 @@
-[Sound applet](https://cloud.githubusercontent.com/assets/5185939/5533812/b1f69f42-8a50-11e4-9f57-05fda23effda.png) with settings, applications' volume, volume 150%, mute button, scrolling track time, custom launcher ...
+[Sound applet](http://cinnamon-spices.linuxmint.com/uploads/applets/YZJM-DXVX-MD9N.png) with settings, applications' volume, volume 150%, mute button, scrolling track time, custom launcher ...
 
 For earlier version than Cinnamon 2.4 see [previous versions](https://github.com/Koutch/Cinnamon-sound-with-apps-volume/releases)
 
@@ -7,12 +7,12 @@ This is a fork of the original Cinnamon sound applet. I add :
 - Mute with middle click on slider and applications mute button
 - Settings menu via Cinnamon's applets menu or right click on the applet 
 
- _Changelog 1.3.1 (2015.01.02)_ :
+ _[Changelog 1.3.1 (2015.01.02)](http://cinnamon-spices.linuxmint.com/applets/view/150)_ :
  
-	- add the scroll/arrow key  step configurable for volume and track time
+	- add scroll/arrow key  step configurable for volume and track time
 	- add album art size configurable
 
- _[Changelog 1.3 (2014.12.23)](http://cinnamon-spices.linuxmint.com/applets/view/150)_ :
+ _Changelog 1.3 (2014.12.23)_ :
  
 	- add the new features of the orginal Cinnamon 2.4 sound applet
 	- add a custom launcher
