@@ -1119,6 +1119,8 @@ MyApplet.prototype = {
             this.settings.bindProperty(Settings.BindingDirection.IN, "launch-name", "launch_name", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "launch-command", "launch_command", this._applySettings, null);
             this.settings.bindProperty(Settings.BindingDirection.IN, "launch-in-terminal", "launch_in_terminal", this._applySettings, null);
+            this.settings.bindProperty(Settings.BindingDirection.IN, "keybinding", "keybinding", this._onKeySettingsUpdated, null);
+            Main.keybindingManager.addHotKey(metadata.uuid, this.keybinding, Lang.bind(this, this._unnecessary));
 
             this.slider_volumeMax = 1;
             this.stop_scroll = false;/// to make a short pause when volume reach 100% while scrolling the applet
@@ -1247,6 +1249,16 @@ MyApplet.prototype = {
         catch (e) {
             global.logError(e);
         }
+    },
+
+    _onKeySettingsUpdated: function() {
+        if (this.keybinding != null)
+            Main.keybindingManager.addHotKey(metadata.uuid, this.keybinding, Lang.bind(this, this._unnecessary));
+
+        this._unnecessary;
+    },
+    _unnecessary: function() {
+        this.on_applet_clicked(null);
     },
 
     on_settings_changed : function() {
