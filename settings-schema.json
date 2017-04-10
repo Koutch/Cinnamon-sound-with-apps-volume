@@ -185,6 +185,18 @@
  "div4" : {
     "type" : "separator"
  },
+ "head3" : {
+    "type" : "header",
+    "description" : "Keybindings"
+ },
+ "keybinding": {
+    "type": "keybinding",
+    "description": "Set the keybinding to call the menu",
+    "default": "<Super>v"
+ },
+ "div5" : {
+    "type" : "separator"
+ },
  "show-custom-launcher" : {
     "type" : "checkbox",
     "default" : false,
